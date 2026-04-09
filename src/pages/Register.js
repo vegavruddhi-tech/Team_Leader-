@@ -155,17 +155,18 @@ export default function Register() {
               <input type="text" value={form.reportingManager} onChange={set('reportingManager')} placeholder="Manager name" required />
             </div>
             <div className="form-group">
-              <label>Position</label>
-              <input type="text" value="Team Lead" readOnly style={{ background: '#f5f5f5', color: '#888', cursor: 'not-allowed' }} />
+              <label>Date of Birth <span className="req">*</span></label>
+              <input type="date" value={form.dob} onChange={set('dob')} required max={new Date().toISOString().split('T')[0]} />
             </div>
-          </div>
 
-          <div className="form-row">
+          </div>
+<input type="hidden" value="Team Lead" />
+          {/* <div className="form-row">
             <div className="form-group">
               <label>Date of Birth <span className="req">*</span></label>
               <input type="date" value={form.dob} onChange={set('dob')} required max={new Date().toISOString().split('T')[0]} />
             </div>
-          </div>
+          </div> */}
 
           <button type="submit" className="btn" disabled={loading}>
             {loading ? 'Submitting...' : 'Submit Registration'}
