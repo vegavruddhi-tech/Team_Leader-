@@ -597,8 +597,8 @@ body {
 
 @media (max-width: 480px) {
   .info-grid { grid-template-columns: 1fr; }
-  .welcome-card { flex-direction: column; text-align: center; }
-  .welcome-avatar { margin: 0 auto; }
+  .welcome-card { flex-direction: row; text-align: left; }
+  .welcome-avatar { margin: 0; }
   .profile-btn { margin: 8px auto 0; }
   .checkbox-group { grid-template-columns: 1fr; }
   .auth-card { padding: 24px 16px; border-radius: 14px; }
