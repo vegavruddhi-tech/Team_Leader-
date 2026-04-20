@@ -11,6 +11,24 @@ const STATUS_COLOR = {
   'Need to visit again':           { color: '#1565c0', bg: '#e3f2fd' },
 };
 
+const POINTS_MAP = { 
+  'Tide': 2, 
+  'Tide MSME': 0.3,
+  'Tide Insurance': 1, 
+  'Tide Credit Card': 1,
+  'Tide BT': 1,
+};
+
+const normalizeProduct = (product) => {
+  const p = (product || '').toLowerCase().trim();
+  if (p === 'tide insurance' || p === 'insurance') return 'Tide Insurance';
+  if (p === 'tide' || p === 'tide onboarding') return 'Tide';
+  if (p === 'msme' || p === 'tide msme') return 'Tide MSME';
+  if (p === 'tide credit card' || p === 'credit card') return 'Tide Credit Card';
+  if (p === 'tide bt' || p === 'bt') return 'Tide BT';
+  return product; // fallback
+};
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const token = localStorage.getItem('token');
@@ -23,6 +41,9 @@ export default function Dashboard() {
   const [activeTab,  setActiveTab]  = useState('team'); // 'my' | 'team'
   const [fseFormModal, setFseFormModal] = useState(null); // { title, forms[] }
   const [selectedFSE, setSelectedFSE] = useState(null); // { name, forms[] }
+  const [fseVerifyData, setFseVerifyData] = useState({}); // { formId: verificationData }
+  const [loadingVerify, setLoadingVerify] = useState(false);
+  const [fsePoints, setFsePoints] = useState({}); // { fseName: points }
   const [dateFilter, setDateFilter] = useState('all');
   const [fromDate,   setFromDate]   = useState('');
   const [toDate,     setToDate]     = useState('');
@@ -55,6 +76,97 @@ export default function Dashboard() {
   }, [token]);
 
   useEffect(() => { loadStats(); loadEmployees(); loadForms(); }, [loadStats, loadEmployees, loadForms]);
+
+  // Calculate points for each FSE
+  useEffect(() => {
+    if (teamForms.length === 0) return;
+    
+    // Fetch verification for all team forms
+    const phones   = teamForms.map(f => f.customerNumber).join(',');
+    const names    = teamForms.map(f => encodeURIComponent(f.customerName || '')).join(',');
+    const products = teamForms.map(f => encodeURIComponent((f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim())).join(',');
+    const months   = teamForms.map(f => encodeURIComponent(new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' }))).join(',');
+    
+    fetch(`${API_BASE}/api/verify/bulk-admin?phones=${encodeURIComponent(phones)}&names=${names}&products=${products}&months=${months}`, {
+      headers: { Authorization: 'Bearer ' + token }
+    })
+      .then(r => r.json())
+      .then(verifyMap => {
+        // Calculate points per FSE
+        const pointsByFSE = {};
+        
+        teamForms.forEach(form => {
+          const fseName = form.employeeName || 'Unknown';
+          const product = (form.formFillingFor || form.tideProduct || form.brand || '').toLowerCase().trim();
+          const vKey = product ? `${form.customerNumber}__${product}` : form.customerNumber;
+          const verification = verifyMap[vKey];
+          
+          if (verification && verification.status === 'Fully Verified') {
+            const productName = form.formFillingFor || (form.brand === 'Tide' && form.tideProduct ? form.tideProduct : form.brand) || '';
+            const points = POINTS_MAP[normalizeProduct(productName)] || 0;
+            
+            if (!pointsByFSE[fseName]) {
+              pointsByFSE[fseName] = { total: 0, counted: new Set() };
+            }
+            
+            // Deduplicate by customerNumber + product
+            const dedupKey = `${form.customerNumber}__${productName.toLowerCase().trim()}`;
+            if (!pointsByFSE[fseName].counted.has(dedupKey)) {
+              pointsByFSE[fseName].counted.add(dedupKey);
+              pointsByFSE[fseName].total += points;
+            }
+          }
+        });
+        
+        // Convert to simple object with just totals
+        const finalPoints = {};
+        Object.keys(pointsByFSE).forEach(name => {
+          finalPoints[name] = Math.round(pointsByFSE[name].total * 10) / 10;
+        });
+        
+        setFsePoints(finalPoints);
+      })
+      .catch(console.error);
+  }, [teamForms, token]);
+
+  // Fetch verification data when FSE modal opens
+  useEffect(() => {
+    if (!selectedFSE) return;
+    setLoadingVerify(true);
+    setFseVerifyData({}); // Clear old data first
+    
+    // Use bulk-admin API (same as admin panel) for consistent results
+    const phones   = selectedFSE.forms.map(f => f.customerNumber).join(',');
+    const names    = selectedFSE.forms.map(f => encodeURIComponent(f.customerName || '')).join(',');
+    const products = selectedFSE.forms.map(f => encodeURIComponent((f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim())).join(',');
+    const months   = selectedFSE.forms.map(f => encodeURIComponent(new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' }))).join(',');
+    
+    fetch(`${API_BASE}/api/verify/bulk-admin?phones=${encodeURIComponent(phones)}&names=${names}&products=${products}&months=${months}&_t=${Date.now()}`, {
+      headers: { 
+        Authorization: 'Bearer ' + token,
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache'
+      }
+    })
+      .then(r => r.json())
+      .then(verifyMap => {
+        const map = {};
+        selectedFSE.forms.forEach(form => {
+          const product = (form.formFillingFor || form.tideProduct || form.brand || '').toLowerCase().trim();
+          const vKey = product ? `${form.customerNumber}__${product}` : form.customerNumber;
+          const verification = verifyMap[vKey];
+          if (verification) {
+            map[form._id] = { verification, phoneCheck: {} };
+          }
+        });
+        setFseVerifyData(map);
+        setLoadingVerify(false);
+      })
+      .catch(() => {
+        setFseVerifyData({});
+        setLoadingVerify(false);
+      });
+  }, [selectedFSE, token]);
 
   const kpis = [
     { label: 'Total FSE',          value: stats.total,   cls: 'kpi-total',  icon: '👥', key: 'total' },
@@ -239,6 +351,8 @@ export default function Dashboard() {
               const notInt  = forms.filter(f => f.status === 'Not Interested').length;
               const tryErr  = forms.filter(f => f.status === 'Try but not done due to error').length;
               const revisit = forms.filter(f => f.status === 'Need to visit again' || f.status === 'Need to Visit again').length;
+              const points = fsePoints[fseName] || 0;
+              
               return (
                 <div key={fseName} className="merchant-row" style={{ cursor: 'pointer', animationDelay: `${i * 0.05}s`, flexWrap: 'wrap', padding: '8px 12px' }}
                   onClick={() => setSelectedFSE({ name: fseName, forms })}>
@@ -246,7 +360,14 @@ export default function Dashboard() {
                     {fseName.charAt(0).toUpperCase()}
                   </div>
                   <div className="mr-info" style={{ flex: 1 }}>
-                    <div className="mr-name" style={{ fontSize: 12 }}>{fseName}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <div className="mr-name" style={{ fontSize: 12 }}>{fseName}</div>
+                      {points > 0 && (
+                        <span style={{ background: '#e6f4ea', color: '#2e7d32', padding: '1px 6px', borderRadius: 10, fontSize: 8, fontWeight: 800, border: '1.5px solid #a8d5b5' }}>
+                          ⭐ {points} pts
+                        </span>
+                      )}
+                    </div>
                     <div className="mr-meta" style={{ gap: 4, flexWrap: 'wrap', marginTop: 3 }}>
                       <span style={{ background: '#e6f4ea', color: '#2e7d32', padding: '1px 6px', borderRadius: 10, fontSize: 9, fontWeight: 700 }}>✅ Onboarding: {ready}</span>
                       <span style={{ background: '#fdecea', color: '#c62828', padding: '1px 6px', borderRadius: 10, fontSize: 9, fontWeight: 700 }}>❌ Not Int: {notInt}</span>
@@ -407,30 +528,139 @@ export default function Dashboard() {
                 <h3 style={{ fontSize: 16, fontWeight: 800, color: 'var(--green-dark)', margin: 0 }}>📋 {selectedFSE.name}</h3>
                 <div style={{ fontSize: 12, color: 'var(--text-light)', marginTop: 2 }}>{selectedFSE.forms.length} form{selectedFSE.forms.length > 1 ? 's' : ''} submitted</div>
               </div>
-              <button onClick={() => setSelectedFSE(null)} style={{ width: 32, height: 32, borderRadius: '50%', border: 'none', background: '#f5f5f5', cursor: 'pointer', fontSize: 18 }}>✕</button>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <button 
+                  onClick={() => {
+                    // Force refresh verification data using bulk-admin API
+                    setLoadingVerify(true);
+                    setFseVerifyData({});
+                    
+                    const phones   = selectedFSE.forms.map(f => f.customerNumber).join(',');
+                    const names    = selectedFSE.forms.map(f => encodeURIComponent(f.customerName || '')).join(',');
+                    const products = selectedFSE.forms.map(f => encodeURIComponent((f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim())).join(',');
+                    const months   = selectedFSE.forms.map(f => encodeURIComponent(new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' }))).join(',');
+                    
+                    fetch(`${API_BASE}/api/verify/bulk-admin?phones=${encodeURIComponent(phones)}&names=${names}&products=${products}&months=${months}&_t=${Date.now()}`, {
+                      headers: { 
+                        Authorization: 'Bearer ' + token,
+                        'Cache-Control': 'no-cache, no-store, must-revalidate',
+                        'Pragma': 'no-cache'
+                      }
+                    })
+                      .then(r => r.json())
+                      .then(verifyMap => {
+                        const map = {};
+                        selectedFSE.forms.forEach(form => {
+                          const product = (form.formFillingFor || form.tideProduct || form.brand || '').toLowerCase().trim();
+                          const vKey = product ? `${form.customerNumber}__${product}` : form.customerNumber;
+                          const verification = verifyMap[vKey];
+                          if (verification) {
+                            map[form._id] = { verification, phoneCheck: {} };
+                          }
+                        });
+                        setFseVerifyData(map);
+                        setLoadingVerify(false);
+                      })
+                      .catch(() => {
+                        setFseVerifyData({});
+                        setLoadingVerify(false);
+                      });
+                  }}
+                  style={{ width: 32, height: 32, borderRadius: '50%', border: 'none', background: '#e6f4ea', color: 'var(--green-dark)', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  title="Refresh verification data">
+                  🔄
+                </button>
+                <button onClick={() => setSelectedFSE(null)} style={{ width: 32, height: 32, borderRadius: '50%', border: 'none', background: '#f5f5f5', cursor: 'pointer', fontSize: 18 }}>✕</button>
+              </div>
             </div>
             <div style={{ overflowY: 'auto', flex: 1, padding: '12px 16px' }}>
+              {loadingVerify && (
+                <div style={{ textAlign: 'center', padding: 20, color: 'var(--text-light)' }}>Loading verification data...</div>
+              )}
               {selectedFSE.forms.map((form, i) => {
                 const sc   = STATUS_COLOR[form.status] || { color: '#333', bg: '#f5f5f5' };
                 const date = new Date(form.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+                const vData = fseVerifyData[form._id];
+                const v = vData?.verification || {};
+                const VBADGE = { 
+                  'Fully Verified': { bg: '#e6f4ea', color: '#2e7d32', icon: '✓' }, 
+                  'Partially Done': { bg: '#fff8e1', color: '#f57f17', icon: '◑' }, 
+                  'Not Verified': { bg: '#fdecea', color: '#c62828', icon: '✗' }, 
+                  'Not Found': { bg: '#f5f5f5', color: '#888', icon: '–' } 
+                };
+                const vb = VBADGE[v.status] || VBADGE['Not Found'];
+                
                 return (
-                  <Link to={`/merchant/${form._id}`} key={form._id}
-                    onClick={() => setSelectedFSE(null)}
-                    style={{ display: 'flex', alignItems: 'center', gap: 14, background: '#fff', borderRadius: 12, padding: '14px 16px', marginBottom: 10, textDecoration: 'none', border: '1.5px solid #e8f0e8', transition: 'all 0.2s' }}
-                    onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--green-light)'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
-                    onMouseLeave={e => { e.currentTarget.style.borderColor = '#e8f0e8'; e.currentTarget.style.transform = 'none'; }}>
-                    <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'linear-gradient(135deg, var(--green-dark), var(--green-mid))', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 800, flexShrink: 0 }}>
-                      {form.customerName?.charAt(0).toUpperCase()}
+                  <div key={form._id}
+                    style={{ background: '#fff', borderRadius: 12, padding: '12px 14px', marginBottom: 10, border: '1.5px solid #e8f0e8' }}>
+                    {/* Header Row */}
+                    <Link to={`/merchant/${form._id}`}
+                      onClick={() => setSelectedFSE(null)}
+                      style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none', marginBottom: 8 }}>
+                      <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'linear-gradient(135deg, var(--green-dark), var(--green-mid))', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 800, flexShrink: 0 }}>
+                        {form.customerName?.charAt(0).toUpperCase()}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-dark)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{form.customerName}</div>
+                        <div style={{ fontSize: 10, color: 'var(--text-light)', marginTop: 1 }}>📞 {form.customerNumber}</div>
+                      </div>
+                      <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                        <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 20, fontSize: 9, fontWeight: 700, background: sc.bg, color: sc.color, whiteSpace: 'nowrap' }}>{form.status}</span>
+                        <div style={{ fontSize: 9, color: 'var(--text-light)', marginTop: 2 }}>{date}</div>
+                      </div>
+                    </Link>
+                    
+                    {/* Details Grid - Mobile Optimized */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, fontSize: 10 }}>
+                      {/* Product */}
+                      <div style={{ background: '#f9f9f9', padding: '4px 6px', borderRadius: 6 }}>
+                        <div style={{ fontSize: 8, color: 'var(--text-light)', marginBottom: 1 }}>Product</div>
+                        <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-dark)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {form.formFillingFor || form.tideProduct || form.brand || '–'}
+                        </div>
+                      </div>
+                      
+                      {/* Location */}
+                      <div style={{ background: '#f9f9f9', padding: '4px 6px', borderRadius: 6 }}>
+                        <div style={{ fontSize: 8, color: 'var(--text-light)', marginBottom: 1 }}>Location</div>
+                        <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-dark)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {form.location || '–'}
+                        </div>
+                      </div>
+                      
+                      {/* Verification Status */}
+                      <div style={{ background: vb.bg, padding: '4px 6px', borderRadius: 6, gridColumn: '1 / -1' }}>
+                        <div style={{ fontSize: 8, color: vb.color, marginBottom: 1, opacity: 0.8 }}>Verification Status</div>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: vb.color }}>
+                          {vb.icon} {v.status || 'Not Found'}
+                          {v.passed !== undefined && (
+                            <span style={{ marginLeft: 6, fontSize: 8, opacity: 0.9 }}>
+                              ({v.passed}/{v.total} checks passed)
+                            </span>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-dark)' }}>{form.customerName}</div>
-                      <div style={{ fontSize: 12, color: 'var(--text-light)', marginTop: 2 }}>📞 {form.customerNumber} · 📍 {form.location}</div>
-                    </div>
-                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                      <span style={{ display: 'inline-block', padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: sc.bg, color: sc.color }}>{form.status}</span>
-                      <div style={{ fontSize: 11, color: 'var(--text-light)', marginTop: 4 }}>{date}</div>
-                    </div>
-                  </Link>
+                    
+                    {/* Verification Conditions - Only if available */}
+                    {v.checks && v.checks.length > 0 && (
+                      <div style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+                        {v.checks.map((check, idx) => (
+                          <span key={idx} style={{ 
+                            fontSize: 8, 
+                            padding: '2px 5px', 
+                            borderRadius: 10, 
+                            background: check.pass ? '#e6f4ea' : '#fdecea',
+                            color: check.pass ? '#2e7d32' : '#c62828',
+                            fontWeight: 600,
+                            whiteSpace: 'nowrap'
+                          }}>
+                            {check.pass ? '✓' : '✗'} {check.label}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 );
               })}
             </div>
