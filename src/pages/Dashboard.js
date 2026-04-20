@@ -44,6 +44,10 @@ export default function Dashboard() {
   const [fseVerifyData, setFseVerifyData] = useState({}); // { formId: verificationData }
   const [loadingVerify, setLoadingVerify] = useState(false);
   const [fsePoints, setFsePoints] = useState({}); // { fseName: points }
+  const [verificationStats, setVerificationStats] = useState({ fullyVerified: 0, partiallyDone: 0, notFound: 0 }); // Verification KPIs
+  const [verificationModal, setVerificationModal] = useState(null); // { status, products: { productName: count } }
+  const [verificationDrillDown, setVerificationDrillDown] = useState(null); // { status, product, forms: [] }
+  const [verificationMap, setVerificationMap] = useState({}); // Store full verification map for drill-down
   const [dateFilter, setDateFilter] = useState('all');
   const [fromDate,   setFromDate]   = useState('');
   const [toDate,     setToDate]     = useState('');
@@ -92,8 +96,16 @@ export default function Dashboard() {
     })
       .then(r => r.json())
       .then(verifyMap => {
+        // Store verification map for drill-down
+        setVerificationMap(verifyMap);
+        
         // Calculate points per FSE
         const pointsByFSE = {};
+        
+        // Calculate verification stats with product breakdown
+        let fullyVerified = 0;
+        let partiallyDone = 0;
+        let notFound = 0;
         
         teamForms.forEach(form => {
           const fseName = form.employeeName || 'Unknown';
@@ -101,6 +113,16 @@ export default function Dashboard() {
           const vKey = product ? `${form.customerNumber}__${product}` : form.customerNumber;
           const verification = verifyMap[vKey];
           
+          // Count verification statuses
+          if (verification) {
+            if (verification.status === 'Fully Verified') fullyVerified++;
+            else if (verification.status === 'Partially Done') partiallyDone++;
+            else notFound++;
+          } else {
+            notFound++;
+          }
+          
+          // Calculate points
           if (verification && verification.status === 'Fully Verified') {
             const productName = form.formFillingFor || (form.brand === 'Tide' && form.tideProduct ? form.tideProduct : form.brand) || '';
             const points = POINTS_MAP[normalizeProduct(productName)] || 0;
@@ -125,6 +147,7 @@ export default function Dashboard() {
         });
         
         setFsePoints(finalPoints);
+        setVerificationStats({ fullyVerified, partiallyDone, notFound });
       })
       .catch(console.error);
   }, [teamForms, token]);
@@ -184,6 +207,43 @@ export default function Dashboard() {
   };
 
   const modalTitles = { total: '👥 All FSEs', working: '✅ Working FSEs', left: '❌ Left / Not Working FSEs' };
+
+  const handleVerificationClick = (status) => {
+    // Calculate product-wise breakdown for the selected status
+    const productCounts = {};
+    
+    teamForms.forEach(form => {
+      const product = (form.formFillingFor || form.tideProduct || form.brand || '').toLowerCase().trim();
+      const vKey = product ? `${form.customerNumber}__${product}` : form.customerNumber;
+      const verification = verificationMap[vKey];
+      
+      const vStatus = verification ? verification.status : 'Not Found';
+      
+      if (vStatus === status) {
+        const productName = form.formFillingFor || (form.brand === 'Tide' && form.tideProduct ? form.tideProduct : form.brand) || 'Unknown';
+        productCounts[productName] = (productCounts[productName] || 0) + 1;
+      }
+    });
+    
+    setVerificationModal({ status, products: productCounts });
+  };
+
+  const handleProductClick = (product) => {
+    // Get all forms for this product with the selected verification status
+    const forms = teamForms.filter(form => {
+      const formProduct = form.formFillingFor || (form.brand === 'Tide' && form.tideProduct ? form.tideProduct : form.brand) || 'Unknown';
+      if (formProduct !== product) return false;
+      
+      const productKey = (form.formFillingFor || form.tideProduct || form.brand || '').toLowerCase().trim();
+      const vKey = productKey ? `${form.customerNumber}__${productKey}` : form.customerNumber;
+      const verification = verificationMap[vKey];
+      const vStatus = verification ? verification.status : 'Not Found';
+      
+      return vStatus === verificationModal.status;
+    });
+    
+    setVerificationDrillDown({ status: verificationModal.status, product, forms });
+  };
 
   const activeForms = (() => {
     let list = activeTab === 'my' ? myForms : teamForms;
@@ -265,7 +325,7 @@ export default function Dashboard() {
         </div>
 
         <div className="section-title" style={{ marginTop: 10 }}>FSE Form Responses</div>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'nowrap' }}>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           {[
             { label: 'Total',      value: teamForms.length,                                                              color: '#1a4731', border: '#1a4731', filter: () => teamForms },
             { label: 'Onboarding', value: teamForms.filter(f => f.status === 'Ready for Onboarding').length,            color: '#2e7d32', border: '#2e7d32', filter: () => teamForms.filter(f => f.status === 'Ready for Onboarding') },
@@ -273,9 +333,22 @@ export default function Dashboard() {
             { label: 'Try/Err',    value: teamForms.filter(f => f.status === 'Try but not done due to error').length,   color: '#e65100', border: '#e65100', filter: () => teamForms.filter(f => f.status === 'Try but not done due to error') },
             { label: 'Revisit',    value: teamForms.filter(f => f.status === 'Need to visit again' || f.status === 'Need to Visit again').length, color: '#1565c0', border: '#1565c0', filter: () => teamForms.filter(f => f.status === 'Need to visit again' || f.status === 'Need to Visit again') },
           ].map(k => (
-            <div key={k.label} className="kpi-card" style={{ padding: '4px 8px', flex: 1, minWidth: 0, borderTopColor: k.border, cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 1 }}
+            <div key={k.label} className="kpi-card" style={{ padding: '4px 8px', flex: '1 1 auto', minWidth: 60, borderTopColor: k.border, cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 1 }}
               onClick={() => setFseFormModal({ title: k.label, forms: k.filter() })}>
               <div style={{ fontSize: 7, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-light)', lineHeight: 1.2 }}>{k.label}</div>
+              <div style={{ fontSize: 14, fontWeight: 800, color: k.color, lineHeight: 1 }}>{k.value}</div>
+            </div>
+          ))}
+          {/* Verification Status KPIs */}
+          {[
+            { label: 'Fully Verified', value: verificationStats.fullyVerified, icon: '✓', color: '#2e7d32', status: 'Fully Verified' },
+            { label: 'Partial',        value: verificationStats.partiallyDone, icon: '◑', color: '#f57f17', status: 'Partially Done' },
+            { label: 'Not Found',      value: verificationStats.notFound,      icon: '–', color: '#888',    status: 'Not Found' },
+          ].map(k => (
+            <div key={k.label} className="kpi-card"
+              style={{ padding: '4px 8px', flex: '1 1 auto', minWidth: 60, borderTop: `3px solid ${k.color}`, cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 1 }}
+              onClick={() => handleVerificationClick(k.status)}>
+              <div style={{ fontSize: 7, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-light)', lineHeight: 1.2 }}>{k.icon} {k.label}</div>
               <div style={{ fontSize: 14, fontWeight: 800, color: k.color, lineHeight: 1 }}>{k.value}</div>
             </div>
           ))}
@@ -666,6 +739,227 @@ export default function Dashboard() {
             </div>
             <div style={{ padding: '14px 24px', borderTop: '1px solid #f0f5f0', textAlign: 'right' }}>
               <button onClick={() => setSelectedFSE(null)} style={{ padding: '9px 20px', background: 'var(--green-dark)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Verification Product Breakdown Modal */}
+      {verificationModal && !verificationDrillDown && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 500, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+          onClick={e => { if (e.target === e.currentTarget) setVerificationModal(null); }}>
+          <div style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 480, maxHeight: '80vh', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            {/* Header */}
+            <div style={{ 
+              padding: '18px 20px', 
+              background: verificationModal.status === 'Fully Verified' ? 'linear-gradient(135deg, #2e7d32, #1b5e20)' : 
+                          verificationModal.status === 'Partially Done' ? 'linear-gradient(135deg, #f57f17, #e65100)' : 
+                          'linear-gradient(135deg, #616161, #424242)',
+              color: '#fff',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <div>
+                <h3 style={{ fontSize: 16, fontWeight: 800, margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: 18 }}>
+                    {verificationModal.status === 'Fully Verified' ? '✓' : 
+                     verificationModal.status === 'Partially Done' ? '◑' : '–'}
+                  </span>
+                  {verificationModal.status}
+                </h3>
+                <div style={{ fontSize: 11, opacity: 0.9, marginTop: 3 }}>
+                  {Object.values(verificationModal.products).reduce((a, b) => a + b, 0)} forms across {Object.keys(verificationModal.products).length} products
+                </div>
+              </div>
+              <button onClick={() => setVerificationModal(null)} 
+                style={{ width: 30, height: 30, borderRadius: '50%', border: 'none', background: 'rgba(255,255,255,0.2)', color: '#fff', cursor: 'pointer', fontSize: 16, fontWeight: 700 }}>
+                ✕
+              </button>
+            </div>
+
+            {/* Product List */}
+            <div style={{ overflowY: 'auto', flex: 1, padding: '16px 20px' }}>
+              {Object.keys(verificationModal.products).length === 0 ? (
+                <div style={{ padding: 40, textAlign: 'center', color: '#999' }}>
+                  <div style={{ fontSize: 36, marginBottom: 8 }}>📭</div>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>No forms found</div>
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gap: 10 }}>
+                  {Object.entries(verificationModal.products)
+                    .sort((a, b) => b[1] - a[1])
+                    .map(([product, count]) => {
+                      const color = verificationModal.status === 'Fully Verified' ? '#2e7d32' : 
+                                    verificationModal.status === 'Partially Done' ? '#f57f17' : '#757575';
+                      const bg = verificationModal.status === 'Fully Verified' ? '#e8f5e9' : 
+                                 verificationModal.status === 'Partially Done' ? '#fff3e0' : '#f5f5f5';
+                      
+                      return (
+                        <div key={product} 
+                          onClick={() => handleProductClick(product)}
+                          style={{ 
+                            background: '#fff',
+                            padding: '12px 14px', 
+                            borderRadius: 10, 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            justifyContent: 'space-between',
+                            border: `2px solid ${bg}`,
+                            cursor: 'pointer',
+                            transition: 'all 0.2s',
+                            boxShadow: '0 2px 6px rgba(0,0,0,0.06)'
+                          }}
+                          onMouseEnter={e => {
+                            e.currentTarget.style.transform = 'translateY(-2px)';
+                            e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.12)';
+                            e.currentTarget.style.borderColor = color;
+                          }}
+                          onMouseLeave={e => {
+                            e.currentTarget.style.transform = 'translateY(0)';
+                            e.currentTarget.style.boxShadow = '0 2px 6px rgba(0,0,0,0.06)';
+                            e.currentTarget.style.borderColor = bg;
+                          }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1 }}>
+                            <div style={{ 
+                              width: 38, 
+                              height: 38, 
+                              borderRadius: 10, 
+                              background: `linear-gradient(135deg, ${color}, ${color}dd)`,
+                              color: '#fff', 
+                              display: 'flex', 
+                              alignItems: 'center', 
+                              justifyContent: 'center', 
+                              fontSize: 15, 
+                              fontWeight: 800,
+                              flexShrink: 0
+                            }}>
+                              {product.charAt(0).toUpperCase()}
+                            </div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a', marginBottom: 1 }}>{product}</div>
+                              <div style={{ fontSize: 10, color: '#666' }}>
+                                {count} form{count !== 1 ? 's' : ''} • Click to view
+                              </div>
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <div style={{ 
+                              fontSize: 20, 
+                              fontWeight: 800, 
+                              color: color,
+                              minWidth: 32,
+                              textAlign: 'right'
+                            }}>
+                              {count}
+                            </div>
+                            <div style={{ fontSize: 16, color: '#999' }}>›</div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Drill-Down: Merchant & FSE Details */}
+      {verificationDrillDown && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 501, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+          onClick={e => { if (e.target === e.currentTarget) setVerificationDrillDown(null); }}>
+          <div style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 560, maxHeight: '85vh', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            {/* Header */}
+            <div style={{ 
+              padding: '18px 20px', 
+              background: verificationDrillDown.status === 'Fully Verified' ? 'linear-gradient(135deg, #2e7d32, #1b5e20)' : 
+                          verificationDrillDown.status === 'Partially Done' ? 'linear-gradient(135deg, #f57f17, #e65100)' : 
+                          'linear-gradient(135deg, #616161, #424242)',
+              color: '#fff',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <div style={{ flex: 1 }}>
+                <button 
+                  onClick={() => setVerificationDrillDown(null)}
+                  style={{ background: 'rgba(255,255,255,0.2)', border: 'none', color: '#fff', padding: '5px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', marginBottom: 6 }}>
+                  ← Back
+                </button>
+                <h3 style={{ fontSize: 16, fontWeight: 800, margin: 0 }}>{verificationDrillDown.product}</h3>
+                <div style={{ fontSize: 11, opacity: 0.9, marginTop: 3 }}>
+                  {verificationDrillDown.forms.length} form{verificationDrillDown.forms.length !== 1 ? 's' : ''}
+                </div>
+              </div>
+              <button onClick={() => { setVerificationDrillDown(null); setVerificationModal(null); }} 
+                style={{ width: 30, height: 30, borderRadius: '50%', border: 'none', background: 'rgba(255,255,255,0.2)', color: '#fff', cursor: 'pointer', fontSize: 16, fontWeight: 700 }}>
+                ✕
+              </button>
+            </div>
+
+            {/* Forms List */}
+            <div style={{ overflowY: 'auto', flex: 1, padding: '16px 20px' }}>
+              <div style={{ display: 'grid', gap: 10 }}>
+                {verificationDrillDown.forms.map((form, i) => (
+                  <Link 
+                    key={form._id} 
+                    to={`/merchant/${form._id}`}
+                    onClick={() => { setVerificationDrillDown(null); setVerificationModal(null); }}
+                    style={{ 
+                      textDecoration: 'none',
+                      background: '#fff',
+                      padding: '12px 14px', 
+                      borderRadius: 10, 
+                      border: '2px solid #f0f0f0',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10,
+                      transition: 'all 0.2s',
+                      boxShadow: '0 2px 6px rgba(0,0,0,0.06)'
+                    }}
+                    onMouseEnter={e => {
+                      e.currentTarget.style.transform = 'translateX(3px)';
+                      e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.12)';
+                      e.currentTarget.style.borderColor = '#2e7d32';
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.transform = 'translateX(0)';
+                      e.currentTarget.style.boxShadow = '0 2px 6px rgba(0,0,0,0.06)';
+                      e.currentTarget.style.borderColor = '#f0f0f0';
+                    }}>
+                    {/* Merchant Avatar */}
+                    <div style={{ 
+                      width: 38, 
+                      height: 38, 
+                      borderRadius: '50%', 
+                      background: 'linear-gradient(135deg, #1a4731, #2d6a4f)',
+                      color: '#fff', 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      justifyContent: 'center', 
+                      fontSize: 15, 
+                      fontWeight: 800,
+                      flexShrink: 0
+                    }}>
+                      {form.customerName?.charAt(0).toUpperCase()}
+                    </div>
+                    
+                    {/* Merchant Info */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a', marginBottom: 2 }}>{form.customerName}</div>
+                      <div style={{ fontSize: 10, color: '#666', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        <span>📞 {form.customerNumber}</span>
+                        <span>•</span>
+                        <span>👤 {form.employeeName}</span>
+                      </div>
+                    </div>
+                    
+                    {/* Arrow */}
+                    <div style={{ fontSize: 16, color: '#999', flexShrink: 0 }}>›</div>
+                  </Link>
+                ))}
+              </div>
             </div>
           </div>
         </div>
