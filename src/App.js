@@ -7,6 +7,7 @@ import Profile from './pages/Profile';
 import MyTeam from './pages/MyTeam';
 import MerchantForm from './pages/MerchantForm';
 import MerchantDetail from './pages/MerchantDetail';
+import Tasks from './pages/Tasks';
 
 function PrivateRoute({ children }) {
   return localStorage.getItem('token') ? children : <Navigate to="/" replace />;
@@ -23,6 +24,7 @@ export default function App() {
         <Route path="/my-team"       element={<PrivateRoute><MyTeam /></PrivateRoute>} />
         <Route path="/merchant-form" element={<PrivateRoute><MerchantForm /></PrivateRoute>} />
         <Route path="/merchant/:id"  element={<PrivateRoute><MerchantDetail /></PrivateRoute>} />
+        <Route path="/tasks"         element={<PrivateRoute><Tasks /></PrivateRoute>} />
         <Route path="*"              element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

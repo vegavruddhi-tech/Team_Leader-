@@ -48,6 +48,8 @@ export default function Dashboard() {
   const [verificationModal, setVerificationModal] = useState(null); // { status, products: { productName: count } }
   const [verificationDrillDown, setVerificationDrillDown] = useState(null); // { status, product, forms: [] }
   const [verificationMap, setVerificationMap] = useState({}); // Store full verification map for drill-down
+  const [taskModal, setTaskModal] = useState(null); // { form: merchantForm, verification, existingTask, canSendReminder, daysSinceCreated }
+  const [taskNotificationCount, setTaskNotificationCount] = useState(0);
   const [dateFilter, setDateFilter] = useState('all');
   const [fromDate,   setFromDate]   = useState('');
   const [toDate,     setToDate]     = useState('');
@@ -80,6 +82,30 @@ export default function Dashboard() {
   }, [token]);
 
   useEffect(() => { loadStats(); loadEmployees(); loadForms(); }, [loadStats, loadEmployees, loadForms]);
+
+  // Fetch task notifications for TL
+  useEffect(() => {
+    if (!token) return;
+    
+    fetch(`${API_BASE}/api/tasks/tl-notifications/count`, {
+      headers: { Authorization: 'Bearer ' + token }
+    })
+      .then(r => r.json())
+      .then(data => setTaskNotificationCount(data.count || 0))
+      .catch(console.error);
+
+    // Refresh every 30 seconds
+    const interval = setInterval(() => {
+      fetch(`${API_BASE}/api/tasks/tl-notifications/count`, {
+        headers: { Authorization: 'Bearer ' + token }
+      })
+        .then(r => r.json())
+        .then(data => setTaskNotificationCount(data.count || 0))
+        .catch(console.error);
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, [token]);
 
   // Calculate points for each FSE
   useEffect(() => {
@@ -245,6 +271,122 @@ export default function Dashboard() {
     setVerificationDrillDown({ status: verificationModal.status, product, forms });
   };
 
+  const handleRaiseAlert = async (form) => {
+    // First, check if there's an existing pending task for this merchant
+    try {
+      const checkResponse = await fetch(`${API_BASE}/api/tasks/check-merchant-task/${form._id}`, {
+        headers: { Authorization: 'Bearer ' + token }
+      });
+      const checkData = await checkResponse.json();
+
+      // Fetch fresh verification details with full checks data
+      const product = (form.formFillingFor || form.tideProduct || form.brand || '').toLowerCase().trim();
+      const month = new Date(form.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' });
+      
+      const response = await fetch(
+        `${API_BASE}/api/verify/bulk-admin?phones=${encodeURIComponent(form.customerNumber)}&names=${encodeURIComponent(form.customerName)}&products=${encodeURIComponent(product)}&months=${encodeURIComponent(month)}`,
+        { headers: { Authorization: 'Bearer ' + token } }
+      );
+      const verifyMap = await response.json();
+      const vKey = product ? `${form.customerNumber}__${product}` : form.customerNumber;
+      const verification = verifyMap[vKey];
+      
+      setTaskModal({ 
+        form, 
+        verification,
+        existingTask: checkData.exists ? checkData.task : null,
+        canSendReminder: checkData.canSendReminder || false,
+        daysSinceCreated: checkData.daysSinceCreated || 0
+      });
+    } catch (err) {
+      console.error('Failed to check existing task:', err);
+      // If check fails, proceed without existing task info
+      const product = (form.formFillingFor || form.tideProduct || form.brand || '').toLowerCase().trim();
+      const month = new Date(form.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' });
+      
+      try {
+        const response = await fetch(
+          `${API_BASE}/api/verify/bulk-admin?phones=${encodeURIComponent(form.customerNumber)}&names=${encodeURIComponent(form.customerName)}&products=${encodeURIComponent(product)}&months=${encodeURIComponent(month)}`,
+          { headers: { Authorization: 'Bearer ' + token } }
+        );
+        const verifyMap = await response.json();
+        const vKey = product ? `${form.customerNumber}__${product}` : form.customerNumber;
+        const verification = verifyMap[vKey];
+        
+        setTaskModal({ form, verification, existingTask: null, canSendReminder: false, daysSinceCreated: 0 });
+      } catch (verifyErr) {
+        console.error('Failed to fetch verification:', verifyErr);
+        setTaskModal({ form, verification: null, existingTask: null, canSendReminder: false, daysSinceCreated: 0 });
+      }
+    }
+  };
+
+  const handleCreateTask = async (e) => {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    const reason = formData.get('reason');
+    const instructions = formData.get('instructions');
+    const isUrgent = formData.get('isUrgent') === 'on';
+    const deadline = formData.get('deadline');
+
+    if (!reason || !instructions) {
+      alert('Please fill all fields');
+      return;
+    }
+
+    if (isUrgent && !deadline) {
+      alert('Please select a deadline for urgent tasks');
+      return;
+    }
+
+    // Prepare verification details
+    const verification = taskModal.verification || {};
+    const verificationDetails = {
+      status: verification.status || 'Not Found',
+      passedConditions: (verification.checks || []).filter(c => c.pass).map(c => c.label),
+      failedConditions: (verification.checks || []).filter(c => !c.pass).map(c => c.label),
+    };
+
+    try {
+      // Check if this is a reminder or new task
+      const isReminder = taskModal.existingTask && taskModal.canSendReminder;
+      const endpoint = isReminder 
+        ? `${API_BASE}/api/tasks/${taskModal.existingTask._id}/send-reminder`
+        : `${API_BASE}/api/tasks/create`;
+      
+      const method = isReminder ? 'PUT' : 'POST';
+
+      const response = await fetch(endpoint, {
+        method: method,
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + token
+        },
+        body: JSON.stringify({
+          merchantId: taskModal.form._id,
+          reason,
+          instructions,
+          isUrgent,
+          deadline: isUrgent ? deadline : null,
+          verificationDetails
+        })
+      });
+
+      if (response.ok) {
+        alert(isReminder ? 'Reminder sent successfully!' : 'Task created successfully!');
+        setTaskModal(null);
+        // Refresh the page data
+        loadForms();
+      } else {
+        const data = await response.json();
+        alert(data.message || 'Failed to create task');
+      }
+    } catch (err) {
+      alert('Error creating task');
+      console.error(err);
+    }
+  };
+
   const activeForms = (() => {
     let list = activeTab === 'my' ? myForms : teamForms;
     const now   = new Date();
@@ -269,7 +411,7 @@ export default function Dashboard() {
 
   return (
     <>
-      <Navbar tl={tl} />
+      <Navbar tl={tl} notificationCount={taskNotificationCount} />
       <div className="main-content">
 
         {/* Welcome */}
@@ -902,68 +1044,309 @@ export default function Dashboard() {
             <div style={{ overflowY: 'auto', flex: 1, padding: '16px 20px' }}>
               <div style={{ display: 'grid', gap: 10 }}>
                 {verificationDrillDown.forms.map((form, i) => (
-                  <Link 
-                    key={form._id} 
-                    to={`/merchant/${form._id}`}
-                    onClick={() => { setVerificationDrillDown(null); setVerificationModal(null); }}
-                    style={{ 
-                      textDecoration: 'none',
-                      background: '#fff',
-                      padding: '12px 14px', 
-                      borderRadius: 10, 
-                      border: '2px solid #f0f0f0',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 10,
-                      transition: 'all 0.2s',
-                      boxShadow: '0 2px 6px rgba(0,0,0,0.06)'
-                    }}
-                    onMouseEnter={e => {
-                      e.currentTarget.style.transform = 'translateX(3px)';
-                      e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.12)';
-                      e.currentTarget.style.borderColor = '#2e7d32';
-                    }}
-                    onMouseLeave={e => {
-                      e.currentTarget.style.transform = 'translateX(0)';
-                      e.currentTarget.style.boxShadow = '0 2px 6px rgba(0,0,0,0.06)';
-                      e.currentTarget.style.borderColor = '#f0f0f0';
-                    }}>
-                    {/* Merchant Avatar */}
-                    <div style={{ 
-                      width: 38, 
-                      height: 38, 
-                      borderRadius: '50%', 
-                      background: 'linear-gradient(135deg, #1a4731, #2d6a4f)',
-                      color: '#fff', 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      justifyContent: 'center', 
-                      fontSize: 15, 
-                      fontWeight: 800,
-                      flexShrink: 0
-                    }}>
-                      {form.customerName?.charAt(0).toUpperCase()}
-                    </div>
-                    
-                    {/* Merchant Info */}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a', marginBottom: 2 }}>{form.customerName}</div>
-                      <div style={{ fontSize: 10, color: '#666', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                        <span>📞 {form.customerNumber}</span>
-                        <span>•</span>
-                        <span>👤 {form.employeeName}</span>
+                  <div key={form._id} style={{ 
+                    background: '#fff',
+                    padding: '12px 14px', 
+                    borderRadius: 10, 
+                    border: '2px solid #f0f0f0',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    boxShadow: '0 2px 6px rgba(0,0,0,0.06)'
+                  }}>
+                    <Link 
+                      to={`/merchant/${form._id}`}
+                      onClick={() => { setVerificationDrillDown(null); setVerificationModal(null); }}
+                      style={{ 
+                        textDecoration: 'none',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 10,
+                        flex: 1,
+                        minWidth: 0
+                      }}>
+                      {/* Merchant Avatar */}
+                      <div style={{ 
+                        width: 38, 
+                        height: 38, 
+                        borderRadius: '50%', 
+                        background: 'linear-gradient(135deg, #1a4731, #2d6a4f)',
+                        color: '#fff', 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        justifyContent: 'center', 
+                        fontSize: 15, 
+                        fontWeight: 800,
+                        flexShrink: 0
+                      }}>
+                        {form.customerName?.charAt(0).toUpperCase()}
                       </div>
-                    </div>
+                      
+                      {/* Merchant Info */}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a', marginBottom: 2 }}>{form.customerName}</div>
+                        <div style={{ fontSize: 10, color: '#666', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          <span>📞 {form.customerNumber}</span>
+                          <span>•</span>
+                          <span>👤 {form.employeeName}</span>
+                        </div>
+                      </div>
+                      
+                      {/* Arrow */}
+                      <div style={{ fontSize: 16, color: '#999', flexShrink: 0 }}>›</div>
+                    </Link>
                     
-                    {/* Arrow */}
-                    <div style={{ fontSize: 16, color: '#999', flexShrink: 0 }}>›</div>
-                  </Link>
+                    {/* Raise Alert Button - Only for Partially Done */}
+                    {verificationDrillDown.status === 'Partially Done' && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRaiseAlert(form);
+                        }}
+                        style={{
+                          background: '#ff9800',
+                          color: '#fff',
+                          border: 'none',
+                          padding: '6px 12px',
+                          borderRadius: 6,
+                          fontSize: 11,
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          flexShrink: 0,
+                          whiteSpace: 'nowrap'
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.background = '#f57c00'}
+                        onMouseLeave={e => e.currentTarget.style.background = '#ff9800'}>
+                        🔔 Alert
+                      </button>
+                    )}
+                  </div>
                 ))}
               </div>
             </div>
           </div>
         </div>
       )}
+
+      {/* Task Creation Modal */}
+      {taskModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 502, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+          onClick={e => { if (e.target === e.currentTarget) setTaskModal(null); }}>
+          <div style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 500, boxShadow: '0 20px 60px rgba(0,0,0,0.3)', overflow: 'hidden' }}>
+            <div style={{ padding: '20px 24px', background: taskModal.existingTask && !taskModal.canSendReminder ? 'linear-gradient(135deg, #757575, #616161)' : 'linear-gradient(135deg, #ff9800, #f57c00)', color: '#fff' }}>
+              <h3 style={{ fontSize: 18, fontWeight: 800, margin: 0 }}>
+                {taskModal.existingTask && taskModal.canSendReminder ? '🔔 Send Reminder' : 
+                 taskModal.existingTask ? '⚠️ Task Already Sent' : 
+                 '🔔 Raise Alert'}
+              </h3>
+              <div style={{ fontSize: 12, opacity: 0.9, marginTop: 4 }}>
+                {taskModal.existingTask && taskModal.canSendReminder ? `Update task for ${taskModal.form.employeeName}` :
+                 taskModal.existingTask ? `Task sent ${taskModal.daysSinceCreated} day${taskModal.daysSinceCreated !== 1 ? 's' : ''} ago` :
+                 `Create task for ${taskModal.form.employeeName}`}
+              </div>
+            </div>
+            
+            {/* Existing Task Warning */}
+            {taskModal.existingTask && !taskModal.canSendReminder && (
+              <div style={{ padding: '20px 24px', background: '#fff3e0', border: '2px solid #ff9800', margin: '20px 24px', borderRadius: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'start', gap: 12 }}>
+                  <span style={{ fontSize: 32 }}>⏳</span>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: '#e65100', marginBottom: 6 }}>
+                      Task Already Sent
+                    </div>
+                    <div style={{ fontSize: 12, color: '#666', marginBottom: 8 }}>
+                      You sent a task to <strong>{taskModal.form.employeeName}</strong> {taskModal.daysSinceCreated} day{taskModal.daysSinceCreated !== 1 ? 's' : ''} ago.
+                    </div>
+                    <div style={{ fontSize: 11, color: '#888', fontStyle: 'italic' }}>
+                      💡 You can send a reminder after 3 days if the task is still pending.
+                    </div>
+                  </div>
+                </div>
+                <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #ffe082' }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: '#666', marginBottom: 6, textTransform: 'uppercase' }}>
+                    Previous Instructions:
+                  </div>
+                  <div style={{ fontSize: 12, color: '#333', background: '#fff', padding: '8px 10px', borderRadius: 6 }}>
+                    {taskModal.existingTask.instructions}
+                  </div>
+                </div>
+                <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end' }}>
+                  <button
+                    type="button"
+                    onClick={() => setTaskModal(null)}
+                    style={{ padding: '10px 20px', background: '#ff9800', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                    Close
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Form - Only show if no existing task OR can send reminder */}
+            {(!taskModal.existingTask || taskModal.canSendReminder) && (
+            <form onSubmit={handleCreateTask} style={{ padding: '20px 24px' }}>
+              {/* Reminder Notice */}
+              {taskModal.existingTask && taskModal.canSendReminder && (
+                <div style={{ background: '#e3f2fd', border: '1.5px solid #2196f3', padding: '12px', borderRadius: 8, marginBottom: 16 }}>
+                  <div style={{ display: 'flex', alignItems: 'start', gap: 10 }}>
+                    <span style={{ fontSize: 20 }}>💬</span>
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: '#1565c0', marginBottom: 4 }}>
+                        Sending Reminder
+                      </div>
+                      <div style={{ fontSize: 11, color: '#666' }}>
+                        Task was sent {taskModal.daysSinceCreated} days ago. Update the instructions below to send a reminder to {taskModal.form.employeeName}.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Merchant Info */}
+              <div style={{ background: '#f5f5f5', padding: '12px', borderRadius: 8, marginBottom: 16 }}>
+                <div style={{ fontSize: 11, color: '#666', marginBottom: 4 }}>Merchant Details</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a' }}>{taskModal.form.customerName}</div>
+                <div style={{ fontSize: 11, color: '#666', marginTop: 2 }}>
+                  📞 {taskModal.form.customerNumber} • {taskModal.form.formFillingFor || taskModal.form.brand}
+                </div>
+              </div>
+
+              {/* Verification Status */}
+              {taskModal.verification && (
+                <div style={{ background: '#fff8e1', border: '1.5px solid #ffb74d', padding: '12px', borderRadius: 8, marginBottom: 16 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#e65100', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span>🔍</span>
+                    <span>Verification Status: {taskModal.verification.status || 'Not Found'}</span>
+                  </div>
+                  
+                  {taskModal.verification.checks && taskModal.verification.checks.length > 0 && (
+                    <>
+                      {/* Passed Conditions */}
+                      {taskModal.verification.checks.filter(c => c.pass).length > 0 && (
+                        <div style={{ marginBottom: 8 }}>
+                          <div style={{ fontSize: 10, color: '#2e7d32', fontWeight: 700, marginBottom: 4 }}>✓ Verified Conditions:</div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                            {taskModal.verification.checks.filter(c => c.pass).map((check, i) => (
+                              <span key={i} style={{ background: '#e6f4ea', color: '#2e7d32', padding: '2px 8px', borderRadius: 12, fontSize: 10, fontWeight: 600 }}>
+                                ✓ {check.label}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Failed Conditions */}
+                      {taskModal.verification.checks.filter(c => !c.pass).length > 0 && (
+                        <div>
+                          <div style={{ fontSize: 10, color: '#c62828', fontWeight: 700, marginBottom: 4 }}>✗ Pending Conditions:</div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                            {taskModal.verification.checks.filter(c => !c.pass).map((check, i) => (
+                              <span key={i} style={{ background: '#fdecea', color: '#c62828', padding: '2px 8px', borderRadius: 12, fontSize: 10, fontWeight: 600 }}>
+                                ✗ {check.label}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* Reason */}
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#333', marginBottom: 6 }}>
+                  Reason (Why Partially Done?) *
+                </label>
+                <textarea
+                  name="reason"
+                  required
+                  rows={3}
+                  placeholder="e.g., Missing documents, incorrect phone number..."
+                  style={{ width: '100%', padding: '10px', border: '2px solid #e0e0e0', borderRadius: 8, fontSize: 13, fontFamily: 'inherit', resize: 'vertical' }}
+                />
+              </div>
+
+              {/* Instructions */}
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#333', marginBottom: 6 }}>
+                  Instructions (What FSE Should Do?) *
+                </label>
+                <textarea
+                  name="instructions"
+                  required
+                  rows={4}
+                  placeholder="e.g., Please collect missing documents and resubmit..."
+                  style={{ width: '100%', padding: '10px', border: '2px solid #e0e0e0', borderRadius: 8, fontSize: 13, fontFamily: 'inherit', resize: 'vertical' }}
+                />
+              </div>
+
+              {/* Urgent Checkbox */}
+              <div style={{ marginBottom: 16, background: '#fff3e0', border: '1.5px solid #ff9800', padding: '12px', borderRadius: 8 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                  <input 
+                    type="checkbox" 
+                    name="isUrgent" 
+                    id="isUrgent"
+                    style={{ width: 18, height: 18, cursor: 'pointer', accentColor: '#ff9800' }}
+                    onChange={(e) => {
+                      const deadlineInput = document.getElementById('deadline');
+                      if (deadlineInput) {
+                        deadlineInput.disabled = !e.target.checked;
+                        if (!e.target.checked) deadlineInput.value = '';
+                      }
+                    }}
+                  />
+                  <span style={{ fontSize: 13, fontWeight: 700, color: '#e65100' }}>
+                    ⚡ Mark as Urgent (High Priority)
+                  </span>
+                </label>
+                
+                {/* Deadline Picker */}
+                <div style={{ marginTop: 10, paddingLeft: 26 }}>
+                  <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#666', marginBottom: 4 }}>
+                    Deadline:
+                  </label>
+                  <input 
+                    type="date" 
+                    name="deadline"
+                    id="deadline"
+                    disabled
+                    min={new Date().toISOString().split('T')[0]}
+                    style={{ 
+                      padding: '8px 10px', 
+                      border: '1.5px solid #e0e0e0', 
+                      borderRadius: 6, 
+                      fontSize: 12,
+                      width: '100%',
+                      maxWidth: 200
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Buttons */}
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  onClick={() => setTaskModal(null)}
+                  style={{ padding: '10px 20px', background: '#f5f5f5', color: '#666', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  style={{ padding: '10px 20px', background: '#ff9800', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}
+                  onMouseEnter={e => e.currentTarget.style.background = '#f57c00'}
+                  onMouseLeave={e => e.currentTarget.style.background = '#ff9800'}>
+                  {taskModal.existingTask && taskModal.canSendReminder ? '🔔 Send Reminder' : '✓ Create Task'}
+                </button>
+              </div>
+            </form>
+            )}
+          </div>
+        </div>
+      )}
+
     </>
   );
 }
