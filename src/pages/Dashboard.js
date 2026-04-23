@@ -121,7 +121,7 @@ export default function Dashboard() {
       headers: { Authorization: 'Bearer ' + token }
     })
       .then(r => r.json())
-      .then(verifyMap => {
+      .then(async verifyMap => {
         // Store verification map for drill-down
         setVerificationMap(verifyMap);
         
@@ -171,7 +171,24 @@ export default function Dashboard() {
         Object.keys(pointsByFSE).forEach(name => {
           finalPoints[name] = Math.round(pointsByFSE[name].total * 10) / 10;
         });
-        
+
+        // Fetch pointsAdjustment for all FSEs and add to verified points
+        try {
+          const adjRes = await fetch(`${API_BASE}/api/forms/admin/employee-points`, {
+            headers: { Authorization: 'Bearer ' + token }
+          });
+          if (adjRes.ok) {
+            const adjData = await adjRes.json();
+            adjData.forEach(emp => {
+              const name = emp.newJoinerName;
+              const adj  = emp.pointsAdjustment || 0;
+              if (adj !== 0) {
+                finalPoints[name] = Math.round(((finalPoints[name] || 0) + adj) * 10) / 10;
+              }
+            });
+          }
+        } catch { /* ignore */ }
+
         setFsePoints(finalPoints);
         setVerificationStats({ fullyVerified, partiallyDone, notFound });
       })
