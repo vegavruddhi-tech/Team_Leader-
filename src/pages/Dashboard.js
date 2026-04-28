@@ -1113,15 +1113,15 @@ export default function Dashboard() {
                       <div style={{ fontSize: 16, color: '#999', flexShrink: 0 }}>›</div>
                     </Link>
                     
-                    {/* Raise Alert Button - Only for Partially Done */}
-                    {verificationDrillDown.status === 'Partially Done' && (
+                    {/* Raise Alert Button - For Partially Done and Not Found */}
+                    {(verificationDrillDown.status === 'Partially Done' || verificationDrillDown.status === 'Not Found') && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           handleRaiseAlert(form);
                         }}
                         style={{
-                          background: '#ff9800',
+                          background: verificationDrillDown.status === 'Partially Done' ? '#ff9800' : '#757575',
                           color: '#fff',
                           border: 'none',
                           padding: '6px 12px',
@@ -1132,8 +1132,8 @@ export default function Dashboard() {
                           flexShrink: 0,
                           whiteSpace: 'nowrap'
                         }}
-                        onMouseEnter={e => e.currentTarget.style.background = '#f57c00'}
-                        onMouseLeave={e => e.currentTarget.style.background = '#ff9800'}>
+                        onMouseEnter={e => e.currentTarget.style.background = verificationDrillDown.status === 'Partially Done' ? '#f57c00' : '#616161'}
+                        onMouseLeave={e => e.currentTarget.style.background = verificationDrillDown.status === 'Partially Done' ? '#ff9800' : '#757575'}>
                         🔔 Alert
                       </button>
                     )}

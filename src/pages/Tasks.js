@@ -121,6 +121,8 @@ export default function Tasks() {
 
   const filteredAdminTasks = adminFilter === 'all'
     ? adminTasks
+    : adminFilter === 'urgent'
+    ? adminTasks.filter(t => t.status === 'pending' && t.priority === 'urgent')
     : adminTasks.filter(t => t.status === adminFilter);
 
   const unreadCount = tasks.filter(t => !t.tlNotified).length;
@@ -463,6 +465,7 @@ export default function Tasks() {
             <div style={{ display: 'flex', gap: 8, marginBottom: 20, borderBottom: '2px solid #f0f0f0' }}>
               {[
                 { key: 'pending', label: 'Pending', count: pendingAdminCount },
+                { key: 'urgent', label: '🔥 Urgent', count: adminTasks.filter(t => t.status === 'pending' && t.priority === 'urgent').length },
                 { key: 'completed', label: 'Completed', count: completedAdminCount },
                 { key: 'all', label: 'All', count: adminTasks.length }
               ].map(tab => (
@@ -471,10 +474,10 @@ export default function Tasks() {
                   onClick={() => setAdminFilter(tab.key)}
                   style={{
                     padding: '12px 24px',
-                    background: adminFilter === tab.key ? '#7c3aed' : 'transparent',
+                    background: adminFilter === tab.key ? (tab.key === 'urgent' ? '#d32f2f' : '#7c3aed') : 'transparent',
                     color: adminFilter === tab.key ? '#fff' : 'var(--text-mid)',
                     border: 'none',
-                    borderBottom: adminFilter === tab.key ? '3px solid #7c3aed' : '3px solid transparent',
+                    borderBottom: adminFilter === tab.key ? `3px solid ${tab.key === 'urgent' ? '#d32f2f' : '#7c3aed'}` : '3px solid transparent',
                     fontSize: 14,
                     fontWeight: 700,
                     cursor: 'pointer',
