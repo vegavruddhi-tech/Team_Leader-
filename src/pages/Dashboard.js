@@ -53,6 +53,9 @@ export default function Dashboard() {
   const [dateFilter, setDateFilter] = useState('all');
   const [fromDate,   setFromDate]   = useState('');
   const [toDate,     setToDate]     = useState('');
+  const [selYear,    setSelYear]    = useState('');
+  const [selMonth,   setSelMonth]   = useState('');
+  const [selProduct, setSelProduct] = useState('');
 
   useEffect(() => {
     fetch(`${API_BASE}/api/tl/profile`, { headers: { Authorization: 'Bearer ' + token } })
@@ -423,6 +426,21 @@ export default function Dashboard() {
         return true;
       });
     }
+    if (selYear)  list = list.filter(f => new Date(f.createdAt).getFullYear() === parseInt(selYear));
+    if (selMonth) list = list.filter(f => new Date(f.createdAt).getMonth()    === parseInt(selMonth));
+    if (selProduct) {
+      const sp = selProduct.toLowerCase().trim();
+      list = list.filter(f => {
+        const p1 = (f.formFillingFor || '').toLowerCase().trim();
+        const p2 = (f.tideProduct || '').toLowerCase().trim();
+        const p3 = (f.brand || '').toLowerCase().trim();
+        if (sp === 'tide msme') return p1.includes('msme') || p2.includes('msme') || p3.includes('msme');
+        if (sp === 'tide insurance') return p1.includes('insurance') || p2.includes('insurance') || p3.includes('insurance');
+        if (sp === 'tide credit card') return p1.includes('credit') || p2.includes('credit') || p3.includes('credit');
+        if (sp === 'tide') return (p1 === 'tide' || p2 === 'tide' || p3 === 'tide') && !p1.includes('msme') && !p1.includes('insurance') && !p1.includes('credit');
+        return p1 === sp || p2 === sp || p3 === sp;
+      });
+    }
     return list;
   })();
 
@@ -527,10 +545,10 @@ export default function Dashboard() {
         </div>
         <div style={{ marginBottom: 16 }}>
           <div className="date-filter-bar">
-            {['all','today','week','month'].map(f => (
+            {['all','today','week'].map(f => (
               <button key={f} className={`date-filter-btn${dateFilter === f ? ' active' : ''}`}
                 onClick={() => { setDateFilter(f); setFromDate(''); setToDate(''); }}>
-                {f === 'all' ? 'All' : f === 'today' ? 'Today' : f === 'week' ? 'This Week' : 'This Month'}
+                {f === 'all' ? 'All' : f === 'today' ? 'Today' : 'This Week'}
               </button>
             ))}
             <div className="date-filter-custom">
@@ -539,7 +557,74 @@ export default function Dashboard() {
               <input type="date" value={toDate} onChange={e => setToDate(e.target.value)} />
               <button className="date-filter-btn" onClick={() => setDateFilter('custom')}>Apply</button>
             </div>
+            <div style={{ position: 'relative', display: 'inline-block' }}>
+              <span style={{ position: 'absolute', top: -9, left: 10, fontSize: 11, color: '#40916c', background: '#fff', padding: '0 4px', fontWeight: 600, zIndex: 1, pointerEvents: 'none' }}>Year</span>
+              <select value={selYear} onChange={e => setSelYear(e.target.value)}
+                style={{ padding: '10px 32px 10px 12px', borderRadius: 10, border: '1.5px solid #40916c', fontSize: 14, color: selYear ? '#1a4731' : '#888', background: '#fff', cursor: 'pointer', appearance: 'none', minWidth: 100, outline: 'none' }}>
+                <option value=""></option>
+                {[2026,2025,2024,2023,2022,2021].map(y => <option key={y} value={y}>{y}</option>)}
+              </select>
+              <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#40916c', fontSize: 12 }}>▼</span>
+            </div>
+            <div style={{ position: 'relative', display: 'inline-block' }}>
+              <span style={{ position: 'absolute', top: -9, left: 10, fontSize: 11, color: '#40916c', background: '#fff', padding: '0 4px', fontWeight: 600, zIndex: 1, pointerEvents: 'none' }}>Month</span>
+              <select value={selMonth} onChange={e => setSelMonth(e.target.value)}
+                style={{ padding: '10px 32px 10px 12px', borderRadius: 10, border: '1.5px solid #40916c', fontSize: 14, color: selMonth !== '' ? '#1a4731' : '#888', background: '#fff', cursor: 'pointer', appearance: 'none', minWidth: 130, outline: 'none' }}>
+                <option value="">All Months</option>
+                {['January','February','March','April','May','June','July','August','September','October','November','December'].map((m,i) => (
+                  <option key={i} value={i}>{m}</option>
+                ))}
+              </select>
+              <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#40916c', fontSize: 12 }}>▼</span>
+            </div>
           </div>
+        </div>
+
+        {/* Product filter chips with verified counts */}
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12, marginTop: 4 }}>
+          {(() => {
+            const products = ['Tide', 'Tide Insurance', 'Tide MSME', 'Tide Credit Card'];
+            const allList = activeTab === 'my' ? myForms : teamForms;
+            const counts = {};
+            products.forEach(p => {
+              const sp = p.toLowerCase().trim();
+              counts[p] = allList.filter(f => {
+                const p1 = (f.formFillingFor || '').toLowerCase().trim();
+                const p2 = (f.tideProduct || '').toLowerCase().trim();
+                const p3 = (f.brand || '').toLowerCase().trim();
+                let match = false;
+                if (sp === 'tide msme') match = p1.includes('msme') || p2.includes('msme') || p3.includes('msme');
+                else if (sp === 'tide insurance') match = p1.includes('insurance') || p2.includes('insurance') || p3.includes('insurance');
+                else if (sp === 'tide credit card') match = p1.includes('credit') || p2.includes('credit') || p3.includes('credit');
+                else if (sp === 'tide') match = (p1 === 'tide' || p2 === 'tide' || p3 === 'tide') && !p1.includes('msme') && !p1.includes('insurance') && !p1.includes('credit');
+                else match = p1 === sp || p2 === sp || p3 === sp;
+                if (!match) return false;
+                const fp = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
+                const vKey = fp ? `${f.customerNumber}__${fp}` : f.customerNumber;
+                return verificationMap[vKey]?.status === 'Fully Verified';
+              }).length;
+            });
+            return (
+              <>
+                <button onClick={() => setSelProduct('')}
+                  style={{ padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                    border: selProduct === '' ? '2px solid #1a4731' : '1.5px solid #c8e6c9',
+                    background: selProduct === '' ? '#1a4731' : '#fff',
+                    color: selProduct === '' ? '#fff' : '#1a4731', transition: 'all 0.15s' }}>
+                  All Products
+                </button>
+                {products.map(p => (
+                  <button key={p} onClick={() => setSelProduct(p)}
+                    style={{ padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                      border: selProduct === p ? '2px solid #1a4731' : '1.5px solid #c8e6c9',
+                      background: selProduct === p ? '#1a4731' : '#fff',
+                      color: selProduct === p ? '#fff' : '#1a4731', transition: 'all 0.15s' }}>
+                    {p}: {counts[p]} ✓
+                  </button>
+                ))}
+              </>
+            );
+          })()}
         </div>
 
         {activeForms.length === 0 ? (
@@ -573,12 +658,12 @@ export default function Dashboard() {
           (() => {
             // Group forms by employeeName
             const grouped = {};
-            teamForms.forEach(f => {
+            activeForms.forEach(f => {
               const name = f.employeeName || 'Unknown';
               if (!grouped[name]) grouped[name] = [];
               grouped[name].push(f);
             });
-            return Object.entries(grouped).map(([fseName, forms], i) => {
+            return Object.entries(grouped).filter(([, forms]) => forms.length > 0).map(([fseName, forms], i) => {
               const ready   = forms.filter(f => f.status === 'Ready for Onboarding').length;
               const notInt  = forms.filter(f => f.status === 'Not Interested').length;
               const tryErr  = forms.filter(f => f.status === 'Try but not done due to error').length;
