@@ -13,6 +13,8 @@ export default function Register() {
   const [cvFile, setCvFile]             = useState(null);
   const [error, setError]               = useState('');
   const [success, setSuccess]           = useState('');
+  const [managers, setManagers]         = useState([]);
+  const [managersLoading, setManagersLoading] = useState(true);
 
   // Clear error on mount
   useEffect(() => { setError(''); }, []);
@@ -21,6 +23,19 @@ export default function Register() {
   const videoRef  = useRef();
   const canvasRef = useRef();
   const streamRef = useRef();
+
+  // Fetch approved managers list
+  useEffect(() => {
+    fetch(`${API_BASE}/api/manager/approved-list`)
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data)) {
+          setManagers(data);
+        }
+      })
+      .catch(err => console.error('Failed to load managers:', err))
+      .finally(() => setManagersLoading(false));
+  }, []);
 
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
 
@@ -152,7 +167,29 @@ export default function Register() {
           <div className="form-row">
             <div className="form-group">
               <label>Reporting Manager <span className="req">*</span></label>
-              <input type="text" value={form.reportingManager} onChange={set('reportingManager')} placeholder="Manager name" required />
+              {managersLoading ? (
+                <input type="text" value="Loading managers..." disabled style={{ background: '#f5f5f5' }} />
+              ) : (
+                <select 
+                  value={form.reportingManager} 
+                  onChange={set('reportingManager')} 
+                  required
+                  style={{
+                    width: '100%', padding: '11px 14px',
+                    border: '1.5px solid #dde8dd', borderRadius: 8,
+                    fontSize: 14, fontFamily: 'var(--font)',
+                    color: 'var(--text-dark)', background: '#fafcfa',
+                    transition: 'border 0.2s', outline: 'none',
+                  }}
+                >
+                  <option value="">Select Manager</option>
+                  {managers.map(manager => (
+                    <option key={manager._id} value={manager.name}>
+                      {manager.name} {manager.location ? `(${manager.location})` : ''}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
             <div className="form-group">
               <label>Date of Birth <span className="req">*</span></label>

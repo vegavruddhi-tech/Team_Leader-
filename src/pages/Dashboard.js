@@ -3,6 +3,7 @@ import { API_BASE } from '../api';
 import { useNavigate, Link } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
+import TideMerchantTimeline from '../components/TideMerchantTimeline';
 
 const STATUS_COLOR = {
   'Ready for Onboarding':          { color: '#2e7d32', bg: '#e6f4ea' },
@@ -437,7 +438,14 @@ export default function Dashboard() {
         if (sp === 'tide msme') return p1.includes('msme') || p2.includes('msme') || p3.includes('msme');
         if (sp === 'tide insurance') return p1.includes('insurance') || p2.includes('insurance') || p3.includes('insurance');
         if (sp === 'tide credit card') return p1.includes('credit') || p2.includes('credit') || p3.includes('credit');
-        if (sp === 'tide') return (p1 === 'tide' || p2 === 'tide' || p3 === 'tide') && !p1.includes('msme') && !p1.includes('insurance') && !p1.includes('credit');
+        if (sp === 'tide') {
+          // Must be exactly "tide" and NOT contain msme, insurance, or credit in ANY field
+          const isTide = (p1 === 'tide' || p2 === 'tide' || p3 === 'tide');
+          const notMSME = !p1.includes('msme') && !p2.includes('msme') && !p3.includes('msme');
+          const notInsurance = !p1.includes('insurance') && !p2.includes('insurance') && !p3.includes('insurance');
+          const notCredit = !p1.includes('credit') && !p2.includes('credit') && !p3.includes('credit');
+          return isTide && notMSME && notInsurance && notCredit;
+        }
         return p1 === sp || p2 === sp || p3 === sp;
       });
     }
@@ -581,7 +589,7 @@ export default function Dashboard() {
         </div>
 
         {/* Product filter chips with verified counts */}
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12, marginTop: 4 }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12, marginTop: 4, alignItems: 'center' }}>
           {(() => {
             const products = ['Tide', 'Tide Insurance', 'Tide MSME', 'Tide Credit Card'];
             const allList = activeTab === 'my' ? myForms : teamForms;
@@ -589,6 +597,18 @@ export default function Dashboard() {
             products.forEach(p => {
               const sp = p.toLowerCase().trim();
               counts[p] = allList.filter(f => {
+                // Filter by Month dropdown (selMonth) if selected
+                if (selMonth !== '') {
+                  const formDate = new Date(f.createdAt);
+                  if (formDate.getMonth() !== parseInt(selMonth)) return false;
+                }
+                
+                // Filter by Year dropdown (selYear) if selected
+                if (selYear) {
+                  const formDate = new Date(f.createdAt);
+                  if (formDate.getFullYear() !== parseInt(selYear)) return false;
+                }
+                
                 const p1 = (f.formFillingFor || '').toLowerCase().trim();
                 const p2 = (f.tideProduct || '').toLowerCase().trim();
                 const p3 = (f.brand || '').toLowerCase().trim();
@@ -596,12 +616,23 @@ export default function Dashboard() {
                 if (sp === 'tide msme') match = p1.includes('msme') || p2.includes('msme') || p3.includes('msme');
                 else if (sp === 'tide insurance') match = p1.includes('insurance') || p2.includes('insurance') || p3.includes('insurance');
                 else if (sp === 'tide credit card') match = p1.includes('credit') || p2.includes('credit') || p3.includes('credit');
-                else if (sp === 'tide') match = (p1 === 'tide' || p2 === 'tide' || p3 === 'tide') && !p1.includes('msme') && !p1.includes('insurance') && !p1.includes('credit');
+                else if (sp === 'tide') {
+                  // Must be exactly "tide" and NOT contain msme, insurance, or credit in ANY field
+                  const isTide = (p1 === 'tide' || p2 === 'tide' || p3 === 'tide');
+                  const notMSME = !p1.includes('msme') && !p2.includes('msme') && !p3.includes('msme');
+                  const notInsurance = !p1.includes('insurance') && !p2.includes('insurance') && !p3.includes('insurance');
+                  const notCredit = !p1.includes('credit') && !p2.includes('credit') && !p3.includes('credit');
+                  match = isTide && notMSME && notInsurance && notCredit;
+                }
                 else match = p1 === sp || p2 === sp || p3 === sp;
                 if (!match) return false;
+                
+                // Check verification status
                 const fp = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
                 const vKey = fp ? `${f.customerNumber}__${fp}` : f.customerNumber;
-                return verificationMap[vKey]?.status === 'Fully Verified';
+                const verification = verificationMap[vKey];
+                
+                return verification?.status === 'Fully Verified';
               }).length;
             });
             return (
@@ -637,20 +668,28 @@ export default function Dashboard() {
             const sc   = STATUS_COLOR[form.status] || { color: '#333', bg: '#f5f5f5' };
             const date = new Date(form.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
             return (
-              <Link to={`/merchant/${form._id}`} key={form._id} className="merchant-row" style={{ animationDelay: `${i * 0.05}s` }}>
-                <div className="mr-avatar">{form.customerName?.charAt(0).toUpperCase()}</div>
-                <div className="mr-info">
-                  <div className="mr-name">{form.customerName}</div>
-                  <div className="mr-meta">
-                    <span>📞 {form.customerNumber}</span>
-                    <span>📍 {form.location}</span>
+              <div key={form._id} style={{ marginBottom: '12px', position: 'relative' }}>
+                <Link to={`/merchant/${form._id}`} className="merchant-row" style={{ animationDelay: `${i * 0.05}s`, display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div className="mr-avatar">{form.customerName?.charAt(0).toUpperCase()}</div>
+                  <div className="mr-info" style={{ flex: 1 }}>
+                    <div className="mr-name">{form.customerName}</div>
+                    <div className="mr-meta">
+                      <span>📞 {form.customerNumber}</span>
+                      <span>📍 {form.location}</span>
+                    </div>
                   </div>
-                </div>
-                <div className="mr-right">
-                  <span className="mr-status" style={{ background: sc.bg, color: sc.color }}>{form.status}</span>
-                  <span className="mr-date">{date}</span>
-                </div>
-              </Link>
+                  <div className="mr-right">
+                    <span className="mr-status" style={{ background: sc.bg, color: sc.color }}>{form.status}</span>
+                    <span className="mr-date">{date}</span>
+                  </div>
+                </Link>
+                {/* Timeline button - only show for Tide product */}
+                {(form.brand === 'Tide' && form.tideProduct === 'Tide') && (
+                  <div onClick={(e) => e.stopPropagation()} style={{ position: 'absolute', top: 8, right: 180, zIndex: 100, pointerEvents: 'auto' }}>
+                    <TideMerchantTimeline phone={form.customerNumber} customerName={form.customerName} />
+                  </div>
+                )}
+              </div>
             );
           })
         ) : (
@@ -672,7 +711,33 @@ export default function Dashboard() {
               
               return (
                 <div key={fseName} className="merchant-row" style={{ cursor: 'pointer', animationDelay: `${i * 0.05}s`, flexWrap: 'wrap', padding: '8px 12px' }}
-                  onClick={() => setSelectedFSE({ name: fseName, forms })}>
+                  onClick={() => {
+                    // Filter forms based on selected product
+                    let filteredForms = forms;
+                    
+                    if (selProduct) {
+                      const sp = selProduct.toLowerCase().trim();
+                      filteredForms = forms.filter(f => {
+                        const p1 = (f.formFillingFor || '').toLowerCase().trim();
+                        const p2 = (f.tideProduct || '').toLowerCase().trim();
+                        const p3 = (f.brand || '').toLowerCase().trim();
+                        
+                        if (sp === 'tide msme') {
+                          return p1.includes('msme') || p2.includes('msme') || p3.includes('msme');
+                        } else if (sp === 'tide insurance') {
+                          return p1.includes('insurance') || p2.includes('insurance') || p3.includes('insurance');
+                        } else if (sp === 'tide credit card') {
+                          return p1.includes('credit') || p2.includes('credit') || p3.includes('credit');
+                        } else if (sp === 'tide') {
+                          return (p1 === 'tide' || p2 === 'tide' || p3 === 'tide') && 
+                                 !p1.includes('msme') && !p1.includes('insurance') && !p1.includes('credit');
+                        }
+                        return p1 === sp || p2 === sp || p3 === sp;
+                      });
+                    }
+                    
+                    setSelectedFSE({ name: fseName, forms: filteredForms });
+                  }}>
                   <div className="mr-avatar" style={{ background: 'linear-gradient(135deg, #1a4731, #2d6a4f)', width: 30, height: 30, fontSize: 12 }}>
                     {fseName.charAt(0).toUpperCase()}
                   </div>
@@ -909,7 +974,14 @@ export default function Dashboard() {
                 
                 return (
                   <div key={form._id}
-                    style={{ background: '#fff', borderRadius: 12, padding: '12px 14px', marginBottom: 10, border: '1.5px solid #e8f0e8' }}>
+                    style={{ background: '#fff', borderRadius: 12, padding: '12px 14px', marginBottom: 10, border: '1.5px solid #e8f0e8', position: 'relative' }}>
+                    {/* Timeline Button - only show for Tide product */}
+                    {(form.brand === 'Tide' && form.tideProduct === 'Tide') && (
+                      <div style={{ position: 'absolute', top: 8, right: 180, zIndex: 100, pointerEvents: 'auto' }} onClick={(e) => e.stopPropagation()}>
+                        <TideMerchantTimeline phone={form.customerNumber} customerName={form.customerName} />
+                      </div>
+                    )}
+                    
                     {/* Header Row */}
                     <Link to={`/merchant/${form._id}`}
                       onClick={() => setSelectedFSE(null)}
