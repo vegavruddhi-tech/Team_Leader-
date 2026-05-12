@@ -37,7 +37,12 @@ function TideMerchantTimeline({ phone, customerName, inline = false }) {
   const [loading, setLoading] = useState(false);
   const [timeline, setTimeline] = useState(null);
   const [error, setError] = useState(null);
-  const [selectedMonth, setSelectedMonth] = useState(null); // Track which month is selected
+  const [selectedMonth, setSelectedMonth] = useState(null);
+
+  // Cleanup body class on unmount
+  useEffect(() => {
+    return () => { document.body.classList.remove('timeline-open'); };
+  }, []);
 
   const fetchTimeline = async () => {
     if (timeline) return; // Already loaded
@@ -69,8 +74,11 @@ function TideMerchantTimeline({ phone, customerName, inline = false }) {
     const newExpanded = !expanded;
     setExpanded(newExpanded);
     
-    if (newExpanded && !timeline) {
-      fetchTimeline();
+    if (newExpanded) {
+      document.body.classList.add('timeline-open');
+      if (!timeline) fetchTimeline();
+    } else {
+      document.body.classList.remove('timeline-open');
     }
   };
 
@@ -82,9 +90,11 @@ function TideMerchantTimeline({ phone, customerName, inline = false }) {
 
   return (
     <>
-      <Box sx={{ 
+      <Box className="timeline-btn-wrapper" sx={{ 
         position: 'relative',
-        display: expanded ? 'none' : 'block'
+        visibility: expanded ? 'hidden' : 'visible',
+        pointerEvents: expanded ? 'none' : 'auto',
+        display: 'inline-flex'
       }}>
         {/* Timeline Toggle Button */}
         <Tooltip title="Show Month-by-Month Timeline" placement="left">
@@ -371,7 +381,8 @@ function TideMerchantTimeline({ phone, customerName, inline = false }) {
                       <Box sx={{ 
                         display: 'grid', 
                         gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, 
-                        gap: 2 
+                        gap: 2,
+                        overflow: 'hidden'
                       }}>
                         {/* Merchant Info */}
                         {selectedMonthData.merchantName && (
@@ -483,7 +494,9 @@ function TideMerchantTimeline({ phone, customerName, inline = false }) {
                                   p: { xs: 0.8, sm: 1 },
                                   bgcolor: check.pass ? '#e6f4ea' : '#fdecea',
                                   borderRadius: 1,
-                                  border: `1px solid ${check.pass ? '#2e7d32' : '#c62828'}30`
+                                  border: `1px solid ${check.pass ? '#2e7d32' : '#c62828'}30`,
+                                  overflow: 'hidden',
+                                  position: 'relative'
                                 }}>
                                   <Box sx={{ 
                                     width: { xs: 18, sm: 20 }, 

@@ -683,9 +683,9 @@ export default function Dashboard() {
                     <span className="mr-date">{date}</span>
                   </div>
                 </Link>
-                {/* Timeline button - only show for Tide product */}
+                {/* Timeline button - below the date, inline */}
                 {(form.brand === 'Tide' && form.tideProduct === 'Tide') && (
-                  <div onClick={(e) => e.stopPropagation()} style={{ position: 'absolute', top: 8, right: 180, zIndex: 100, pointerEvents: 'auto' }}>
+                  <div onClick={(e) => e.stopPropagation()} style={{ display: 'flex', justifyContent: 'flex-end', paddingRight: 4, marginTop: 4 }}>
                     <TideMerchantTimeline phone={form.customerNumber} customerName={form.customerName} />
                   </div>
                 )}
@@ -975,12 +975,6 @@ export default function Dashboard() {
                 return (
                   <div key={form._id}
                     style={{ background: '#fff', borderRadius: 12, padding: '12px 14px', marginBottom: 10, border: '1.5px solid #e8f0e8', position: 'relative' }}>
-                    {/* Timeline Button - only show for Tide product */}
-                    {(form.brand === 'Tide' && form.tideProduct === 'Tide') && (
-                      <div style={{ position: 'absolute', top: 8, right: 180, zIndex: 100, pointerEvents: 'auto' }} onClick={(e) => e.stopPropagation()}>
-                        <TideMerchantTimeline phone={form.customerNumber} customerName={form.customerName} />
-                      </div>
-                    )}
                     
                     {/* Header Row */}
                     <Link to={`/merchant/${form._id}`}
@@ -998,6 +992,12 @@ export default function Dashboard() {
                         <div style={{ fontSize: 9, color: 'var(--text-light)', marginTop: 2 }}>{date}</div>
                       </div>
                     </Link>
+                    {/* Timeline button - below the date, inline */}
+                    {(form.brand === 'Tide' && form.tideProduct === 'Tide') && (
+                      <div onClick={(e) => e.stopPropagation()} style={{ display: 'flex', justifyContent: 'flex-end', paddingRight: 4, marginBottom: 4 }}>
+                        <TideMerchantTimeline phone={form.customerNumber} customerName={form.customerName} />
+                      </div>
+                    )}
                     
                     {/* Details Grid - Mobile Optimized */}
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, fontSize: 10 }}>

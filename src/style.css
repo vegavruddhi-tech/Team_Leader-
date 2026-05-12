@@ -1189,3 +1189,9 @@ body { padding-bottom: 52px; }
   .main-content table td { padding: 10px 8px; font-size: 11px; }
 }
 
+
+/* Hide all timeline buttons when one timeline modal is open */
+body.timeline-open .timeline-btn-wrapper {
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
