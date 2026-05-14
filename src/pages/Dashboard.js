@@ -456,7 +456,7 @@ export default function Dashboard() {
 
   // Recalculate verification stats based on activeForms + existing verificationMap
   const activeVerificationStats = (() => {
-    let fv = 0, pd = 0, nf = 0;
+    let fv = 0, pd = 0, nf = 0, cf = 0;
     activeForms.forEach(form => {
       const product = (form.formFillingFor || form.tideProduct || form.brand || '').toLowerCase().trim();
       const vKey = product ? `${form.customerNumber}__${product}` : form.customerNumber;
@@ -464,12 +464,13 @@ export default function Dashboard() {
       if (verification) {
         if (verification.status === 'Fully Verified') fv++;
         else if (verification.status === 'Partially Done') pd++;
+        else if (verification.status === 'Critical Failure') cf++;
         else nf++;
       } else {
         nf++;
       }
     });
-    return { fullyVerified: fv, partiallyDone: pd, notFound: nf };
+    return { fullyVerified: fv, partiallyDone: pd, notFound: nf, criticalFailure: cf };
   })();
 
   return (
@@ -546,16 +547,10 @@ export default function Dashboard() {
           ))}
           {/* Verification Status KPIs */}
           {[
-<<<<<<< Updated upstream
-            { label: 'Fully Verified',  value: verificationStats.fullyVerified,  icon: '✓', color: '#2e7d32', status: 'Fully Verified' },
-            { label: 'Critical Failure', value: verificationStats.criticalFailure, icon: '⚠', color: '#c62828', status: 'Critical Failure' },
-            { label: 'Partial',         value: verificationStats.partiallyDone,  icon: '◑', color: '#f57f17', status: 'Partially Done' },
-            { label: 'Not Found',       value: verificationStats.notFound,       icon: '–', color: '#888',    status: 'Not Found' },
-=======
-            { label: 'Fully Verified', value: activeVerificationStats.fullyVerified, icon: '✓', color: '#2e7d32', status: 'Fully Verified' },
-            { label: 'Partial',        value: activeVerificationStats.partiallyDone, icon: '◑', color: '#f57f17', status: 'Partially Done' },
-            { label: 'Not Found',      value: activeVerificationStats.notFound,      icon: '–', color: '#888',    status: 'Not Found' },
->>>>>>> Stashed changes
+            { label: 'Fully Verified',  value: activeVerificationStats.fullyVerified,  icon: '✓', color: '#2e7d32', status: 'Fully Verified' },
+            { label: 'Critical Failure', value: activeVerificationStats.criticalFailure || 0, icon: '⚠', color: '#c62828', status: 'Critical Failure' },
+            { label: 'Partial',         value: activeVerificationStats.partiallyDone,  icon: '◑', color: '#f57f17', status: 'Partially Done' },
+            { label: 'Not Found',       value: activeVerificationStats.notFound,       icon: '–', color: '#888',    status: 'Not Found' },
           ].map(k => (
             <div key={k.label} className="kpi-card"
               style={{ padding: '4px 8px', flex: '1 1 auto', minWidth: 60, borderTop: `3px solid ${k.color}`, cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 1 }}
