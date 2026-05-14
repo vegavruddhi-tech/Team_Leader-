@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 
-const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:4000';
+const API_BASE = process.env.REACT_APP_API_URL || process.env.REACT_APP_API_BASE || 'http://localhost:4000';
 
 export default function MySalary() {
   const navigate = useNavigate();
@@ -24,7 +24,8 @@ export default function MySalary() {
       navigate('/');
       return;
     }
-    fetch(`${API_BASE}/api/auth/profile`, {
+    // 🔥 FIX: TLs should use /api/tl/profile, not /api/auth/profile
+    fetch(`${API_BASE}/api/tl/profile`, {
       headers: { Authorization: 'Bearer ' + token }
     })
       .then(r => {
@@ -67,14 +68,12 @@ export default function MySalary() {
     setViewModal(true);
   };
 
-  // Download PDF (placeholder - will implement later)
+  // Download PDF (view PDF in modal)
   const handleDownloadPDF = (slip) => {
-    if (slip.pdfUrl) {
-      setPdfUrl(slip.pdfUrl);
-      setPdfViewerOpen(true);
-    } else {
-      alert('PDF not available yet');
-    }
+    // Use the streaming endpoint instead of direct file access
+    const streamUrl = `${API_BASE}/api/salary/${slip._id}/view-pdf`;
+    setPdfUrl(streamUrl);
+    setPdfViewerOpen(true);
   };
 
   const getStatusColor = (status) => {
@@ -183,24 +182,57 @@ export default function MySalary() {
                       </div>
                     </div>
 
-                    {/* Middle: Points & Salary */}
+                    {/* Middle: Points & Salary OR Fixed Salary */}
                     <div style={{ flex: 1, display: 'flex', gap: 24 }}>
-                      <div>
-                        <div style={{ fontSize: 11, color: '#888', fontWeight: 600, textTransform: 'uppercase', marginBottom: 4 }}>
-                          Points Earned
-                        </div>
-                        <div style={{ fontSize: 18, fontWeight: 700, color: '#1565c0' }}>
-                          {slip.pointsEarned} pts
-                        </div>
-                      </div>
-                      <div>
-                        <div style={{ fontSize: 11, color: '#888', fontWeight: 600, textTransform: 'uppercase', marginBottom: 4 }}>
-                          Total Salary
-                        </div>
-                        <div style={{ fontSize: 20, fontWeight: 800, color: '#2e7d32' }}>
-                          ₹{slip.totalSalary.toLocaleString('en-IN')}
-                        </div>
-                      </div>
+                      {slip.role === 'FSE' ? (
+                        <>
+                          <div>
+                            <div style={{ fontSize: 11, color: '#888', fontWeight: 600, textTransform: 'uppercase', marginBottom: 4 }}>
+                              Points Earned
+                            </div>
+                            <div style={{ fontSize: 18, fontWeight: 700, color: '#1565c0' }}>
+                              {slip.pointsEarned} pts
+                            </div>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 11, color: '#888', fontWeight: 600, textTransform: 'uppercase', marginBottom: 4 }}>
+                              Total Salary
+                            </div>
+                            <div style={{ fontSize: 20, fontWeight: 800, color: '#2e7d32' }}>
+                              ₹{slip.totalSalary.toLocaleString('en-IN')}
+                            </div>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div>
+                            <div style={{ fontSize: 11, color: '#888', fontWeight: 600, textTransform: 'uppercase', marginBottom: 4 }}>
+                              Base Salary
+                            </div>
+                            <div style={{ fontSize: 18, fontWeight: 700, color: '#1565c0' }}>
+                              ₹{(slip.baseSalary || (slip.role === 'TL' ? 35000 : 60000)).toLocaleString('en-IN')}
+                            </div>
+                          </div>
+                          {slip.incentiveAmount > 0 && (
+                            <div>
+                              <div style={{ fontSize: 11, color: '#888', fontWeight: 600, textTransform: 'uppercase', marginBottom: 4 }}>
+                                Incentive
+                              </div>
+                              <div style={{ fontSize: 18, fontWeight: 700, color: '#ff9800' }}>
+                                ₹{slip.incentiveAmount.toLocaleString('en-IN')}
+                              </div>
+                            </div>
+                          )}
+                          <div>
+                            <div style={{ fontSize: 11, color: '#888', fontWeight: 600, textTransform: 'uppercase', marginBottom: 4 }}>
+                              Total Salary
+                            </div>
+                            <div style={{ fontSize: 20, fontWeight: 800, color: '#2e7d32' }}>
+                              ₹{(slip.totalSalary || ((slip.baseSalary || (slip.role === 'TL' ? 35000 : 60000)) + (slip.incentiveAmount || 0))).toLocaleString('en-IN')}
+                            </div>
+                          </div>
+                        </>
+                      )}
                     </div>
 
                     {/* Right: Status & Actions */}
@@ -340,22 +372,45 @@ export default function MySalary() {
                 <div style={{ fontSize: 16, fontWeight: 700, color: '#333' }}>{selectedSlip.role}</div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                <div style={{ padding: 16, background: '#e3f2fd', borderRadius: 8 }}>
-                  <div style={{ fontSize: 12, color: '#1565c0', fontWeight: 600, marginBottom: 4 }}>Points Earned</div>
-                  <div style={{ fontSize: 20, fontWeight: 800, color: '#1565c0' }}>{selectedSlip.pointsEarned}</div>
-                </div>
+              {selectedSlip.role === 'FSE' ? (
+                <>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                    <div style={{ padding: 16, background: '#e3f2fd', borderRadius: 8 }}>
+                      <div style={{ fontSize: 12, color: '#1565c0', fontWeight: 600, marginBottom: 4 }}>Points Earned</div>
+                      <div style={{ fontSize: 20, fontWeight: 800, color: '#1565c0' }}>{selectedSlip.pointsEarned}</div>
+                    </div>
 
-                <div style={{ padding: 16, background: '#e3f2fd', borderRadius: 8 }}>
-                  <div style={{ fontSize: 12, color: '#1565c0', fontWeight: 600, marginBottom: 4 }}>Point Value</div>
-                  <div style={{ fontSize: 20, fontWeight: 800, color: '#1565c0' }}>₹{selectedSlip.pointValue}</div>
-                </div>
-              </div>
+                    <div style={{ padding: 16, background: '#e3f2fd', borderRadius: 8 }}>
+                      <div style={{ fontSize: 12, color: '#1565c0', fontWeight: 600, marginBottom: 4 }}>Point Value</div>
+                      <div style={{ fontSize: 20, fontWeight: 800, color: '#1565c0' }}>₹{selectedSlip.pointValue}</div>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{ display: 'grid', gridTemplateColumns: selectedSlip.incentiveAmount > 0 ? '1fr 1fr' : '1fr', gap: 16 }}>
+                    <div style={{ padding: 16, background: '#e3f2fd', borderRadius: 8 }}>
+                      <div style={{ fontSize: 20, fontWeight: 800, color: '#1565c0' }}>
+                        ₹{(selectedSlip.baseSalary || (selectedSlip.role === 'TL' ? 35000 : 60000)).toLocaleString('en-IN')}
+                      </div>
+                    </div>
+
+                    {(selectedSlip.incentiveAmount > 0 || selectedSlip.incentiveAmount === 0) && (
+                      <div style={{ padding: 16, background: '#fff8e1', borderRadius: 8 }}>
+                        <div style={{ fontSize: 12, color: '#f57f17', fontWeight: 600, marginBottom: 4 }}>Incentive</div>
+                        <div style={{ fontSize: 20, fontWeight: 800, color: '#f57f17' }}>
+                          ₹{(selectedSlip.incentiveAmount || 0).toLocaleString('en-IN')}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
 
               <div style={{ padding: 20, background: '#e6f4ea', borderRadius: 8, border: '2px solid #2e7d32' }}>
                 <div style={{ fontSize: 12, color: '#2e7d32', fontWeight: 600, marginBottom: 4 }}>Total Salary</div>
                 <div style={{ fontSize: 28, fontWeight: 800, color: '#2e7d32' }}>
-                  ₹{selectedSlip.totalSalary.toLocaleString('en-IN')}
+                  ₹{(selectedSlip.totalSalary || ((selectedSlip.baseSalary || (selectedSlip.role === 'TL' ? 35000 : 60000)) + (selectedSlip.incentiveAmount || 0))).toLocaleString('en-IN')}
                 </div>
               </div>
 

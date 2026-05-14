@@ -233,13 +233,20 @@ export default function Navbar({ tl, notificationCount, onNotificationClick }) {
           </div>
           <div className="nav-info">
             <div className="name">{tl?.name || 'Loading...'}</div>
-            <div className="status-badge">Team Lead</div>
+            <div className="status-badge">
+              {tl?.employeeId ? `${tl.employeeId} • Team Lead` : 'Team Lead'}
+            </div>
           </div>
           <span className="nav-chevron">▾</span>
           <div className={`dropdown-menu${open ? ' open' : ''}`}>
             <div className="dropdown-header">
               <div className="dh-name">{tl?.name || '–'}</div>
               <div className="dh-email">{tl?.email || '–'}</div>
+              {tl?.employeeId && (
+                <div style={{ fontSize: 11, color: '#1a4731', fontWeight: 700, marginTop: 4 }}>
+                  ID: {tl.employeeId}
+                </div>
+              )}
             </div>
             <a href="/dashboard" onClick={e => { e.preventDefault(); navigate('/dashboard'); }}>🏠&nbsp; Dashboard</a>
             <a href="/my-team"   onClick={e => { e.preventDefault(); navigate('/my-team'); }}>👥&nbsp; My Team</a>
