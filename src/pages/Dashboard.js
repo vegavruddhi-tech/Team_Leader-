@@ -930,7 +930,7 @@ export default function Dashboard() {
             <div style={{ padding: '18px 24px', borderBottom: '1px solid #f0f5f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
                 <h3 style={{ fontSize: 16, fontWeight: 800, color: 'var(--green-dark)', margin: 0 }}>
-                  📋 {selectedFSE.name} <span style={{ fontSize: 10, color: '#999', fontWeight: 400 }}>[v2.0]</span>
+                  📋 {selectedFSE.name} <span style={{ fontSize: 10, color: '#2e7d32', fontWeight: 700, background: '#e6f4ea', padding: '2px 6px', borderRadius: 4 }}>[v3.0]</span>
                 </h3>
                 <div style={{ fontSize: 12, color: 'var(--text-light)', marginTop: 2 }}>{selectedFSE.forms.length} form{selectedFSE.forms.length > 1 ? 's' : ''} submitted</div>
                 {/* Employee Details */}
