@@ -54,8 +54,8 @@ export default function Dashboard() {
   const [dateFilter, setDateFilter] = useState('all');
   const [fromDate,   setFromDate]   = useState('');
   const [toDate,     setToDate]     = useState('');
-  const [selYear,    setSelYear]    = useState('');
-  const [selMonth,   setSelMonth]   = useState('');
+  const [selYear,    setSelYear]    = useState(new Date().getFullYear().toString());
+  const [selMonth,   setSelMonth]   = useState(new Date().getMonth().toString());
   const [selProduct, setSelProduct] = useState('');
 
   useEffect(() => {
@@ -454,6 +454,24 @@ export default function Dashboard() {
     return list;
   })();
 
+  // Recalculate verification stats based on activeForms + existing verificationMap
+  const activeVerificationStats = (() => {
+    let fv = 0, pd = 0, nf = 0;
+    activeForms.forEach(form => {
+      const product = (form.formFillingFor || form.tideProduct || form.brand || '').toLowerCase().trim();
+      const vKey = product ? `${form.customerNumber}__${product}` : form.customerNumber;
+      const verification = verificationMap[vKey];
+      if (verification) {
+        if (verification.status === 'Fully Verified') fv++;
+        else if (verification.status === 'Partially Done') pd++;
+        else nf++;
+      } else {
+        nf++;
+      }
+    });
+    return { fullyVerified: fv, partiallyDone: pd, notFound: nf };
+  })();
+
   return (
     <>
       <Navbar tl={tl} notificationCount={taskNotificationCount} />
@@ -514,11 +532,11 @@ export default function Dashboard() {
         <div className="section-title" style={{ marginTop: 10 }}>FSE Form Responses</div>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           {[
-            { label: 'Total',      value: teamForms.length,                                                              color: '#1a4731', border: '#1a4731', filter: () => teamForms },
-            { label: 'Onboarding', value: teamForms.filter(f => f.status === 'Ready for Onboarding').length,            color: '#2e7d32', border: '#2e7d32', filter: () => teamForms.filter(f => f.status === 'Ready for Onboarding') },
-            { label: 'Not Int.',   value: teamForms.filter(f => f.status === 'Not Interested').length,                  color: '#c62828', border: '#c62828', filter: () => teamForms.filter(f => f.status === 'Not Interested') },
-            { label: 'Try/Err',    value: teamForms.filter(f => f.status === 'Try but not done due to error').length,   color: '#e65100', border: '#e65100', filter: () => teamForms.filter(f => f.status === 'Try but not done due to error') },
-            { label: 'Revisit',    value: teamForms.filter(f => f.status === 'Need to visit again' || f.status === 'Need to Visit again').length, color: '#1565c0', border: '#1565c0', filter: () => teamForms.filter(f => f.status === 'Need to visit again' || f.status === 'Need to Visit again') },
+            { label: 'Total',      value: activeForms.length,                                                              color: '#1a4731', border: '#1a4731', filter: () => activeForms },
+            { label: 'Onboarding', value: activeForms.filter(f => f.status === 'Ready for Onboarding').length,            color: '#2e7d32', border: '#2e7d32', filter: () => activeForms.filter(f => f.status === 'Ready for Onboarding') },
+            { label: 'Not Int.',   value: activeForms.filter(f => f.status === 'Not Interested').length,                  color: '#c62828', border: '#c62828', filter: () => activeForms.filter(f => f.status === 'Not Interested') },
+            { label: 'Try/Err',    value: activeForms.filter(f => f.status === 'Try but not done due to error').length,   color: '#e65100', border: '#e65100', filter: () => activeForms.filter(f => f.status === 'Try but not done due to error') },
+            { label: 'Revisit',    value: activeForms.filter(f => f.status === 'Need to visit again' || f.status === 'Need to Visit again').length, color: '#1565c0', border: '#1565c0', filter: () => activeForms.filter(f => f.status === 'Need to visit again' || f.status === 'Need to Visit again') },
           ].map(k => (
             <div key={k.label} className="kpi-card" style={{ padding: '4px 8px', flex: '1 1 auto', minWidth: 60, borderTopColor: k.border, cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 1 }}
               onClick={() => setFseFormModal({ title: k.label, forms: k.filter() })}>
@@ -528,10 +546,16 @@ export default function Dashboard() {
           ))}
           {/* Verification Status KPIs */}
           {[
+<<<<<<< Updated upstream
             { label: 'Fully Verified',  value: verificationStats.fullyVerified,  icon: '✓', color: '#2e7d32', status: 'Fully Verified' },
             { label: 'Critical Failure', value: verificationStats.criticalFailure, icon: '⚠', color: '#c62828', status: 'Critical Failure' },
             { label: 'Partial',         value: verificationStats.partiallyDone,  icon: '◑', color: '#f57f17', status: 'Partially Done' },
             { label: 'Not Found',       value: verificationStats.notFound,       icon: '–', color: '#888',    status: 'Not Found' },
+=======
+            { label: 'Fully Verified', value: activeVerificationStats.fullyVerified, icon: '✓', color: '#2e7d32', status: 'Fully Verified' },
+            { label: 'Partial',        value: activeVerificationStats.partiallyDone, icon: '◑', color: '#f57f17', status: 'Partially Done' },
+            { label: 'Not Found',      value: activeVerificationStats.notFound,      icon: '–', color: '#888',    status: 'Not Found' },
+>>>>>>> Stashed changes
           ].map(k => (
             <div key={k.label} className="kpi-card"
               style={{ padding: '4px 8px', flex: '1 1 auto', minWidth: 60, borderTop: `3px solid ${k.color}`, cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 1 }}
