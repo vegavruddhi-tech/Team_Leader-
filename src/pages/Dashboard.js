@@ -45,7 +45,7 @@ export default function Dashboard() {
   const [fseVerifyData, setFseVerifyData] = useState({}); // { formId: verificationData }
   const [loadingVerify, setLoadingVerify] = useState(false);
   const [fsePoints, setFsePoints] = useState({}); // { fseName: points }
-  const [verificationStats, setVerificationStats] = useState({ fullyVerified: 0, partiallyDone: 0, notFound: 0 }); // Verification KPIs
+  const [verificationStats, setVerificationStats] = useState({ fullyVerified: 0, criticalFailure: 0, partiallyDone: 0, notFound: 0 }); // Verification KPIs
   const [verificationModal, setVerificationModal] = useState(null); // { status, products: { productName: count } }
   const [verificationDrillDown, setVerificationDrillDown] = useState(null); // { status, product, forms: [] }
   const [verificationMap, setVerificationMap] = useState({}); // Store full verification map for drill-down
@@ -134,6 +134,7 @@ export default function Dashboard() {
         
         // Calculate verification stats with product breakdown
         let fullyVerified = 0;
+        let criticalFailure = 0;
         let partiallyDone = 0;
         let notFound = 0;
         
@@ -146,6 +147,7 @@ export default function Dashboard() {
           // Count verification statuses
           if (verification) {
             if (verification.status === 'Fully Verified') fullyVerified++;
+            else if (verification.status === 'Critical Failure') criticalFailure++;
             else if (verification.status === 'Partially Done') partiallyDone++;
             else notFound++;
           } else {
@@ -194,7 +196,7 @@ export default function Dashboard() {
         } catch { /* ignore */ }
 
         setFsePoints(finalPoints);
-        setVerificationStats({ fullyVerified, partiallyDone, notFound });
+        setVerificationStats({ fullyVerified, criticalFailure, partiallyDone, notFound });
       })
       .catch(console.error);
   }, [teamForms, token]);
@@ -526,9 +528,10 @@ export default function Dashboard() {
           ))}
           {/* Verification Status KPIs */}
           {[
-            { label: 'Fully Verified', value: verificationStats.fullyVerified, icon: '✓', color: '#2e7d32', status: 'Fully Verified' },
-            { label: 'Partial',        value: verificationStats.partiallyDone, icon: '◑', color: '#f57f17', status: 'Partially Done' },
-            { label: 'Not Found',      value: verificationStats.notFound,      icon: '–', color: '#888',    status: 'Not Found' },
+            { label: 'Fully Verified',  value: verificationStats.fullyVerified,  icon: '✓', color: '#2e7d32', status: 'Fully Verified' },
+            { label: 'Critical Failure', value: verificationStats.criticalFailure, icon: '⚠', color: '#c62828', status: 'Critical Failure' },
+            { label: 'Partial',         value: verificationStats.partiallyDone,  icon: '◑', color: '#f57f17', status: 'Partially Done' },
+            { label: 'Not Found',       value: verificationStats.notFound,       icon: '–', color: '#888',    status: 'Not Found' },
           ].map(k => (
             <div key={k.label} className="kpi-card"
               style={{ padding: '4px 8px', flex: '1 1 auto', minWidth: 60, borderTop: `3px solid ${k.color}`, cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 1 }}
@@ -907,8 +910,37 @@ export default function Dashboard() {
           <div style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 640, maxHeight: '85vh', boxShadow: '0 20px 60px rgba(0,0,0,0.25)', display: 'flex', flexDirection: 'column' }}>
             <div style={{ padding: '18px 24px', borderBottom: '1px solid #f0f5f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
-                <h3 style={{ fontSize: 16, fontWeight: 800, color: 'var(--green-dark)', margin: 0 }}>📋 {selectedFSE.name}</h3>
+                <h3 style={{ fontSize: 16, fontWeight: 800, color: 'var(--green-dark)', margin: 0 }}>
+                  📋 {selectedFSE.name} <span style={{ fontSize: 10, color: '#999', fontWeight: 400 }}>[v2.0]</span>
+                </h3>
                 <div style={{ fontSize: 12, color: 'var(--text-light)', marginTop: 2 }}>{selectedFSE.forms.length} form{selectedFSE.forms.length > 1 ? 's' : ''} submitted</div>
+                {/* Employee Details */}
+                {(() => {
+                  const emp = employees.find(e => (e.newJoinerName || '').toLowerCase().trim() === selectedFSE.name.toLowerCase().trim());
+                  if (emp) {
+                    return (
+                      <div style={{ marginTop: 8, padding: '8px 12px', background: '#f9f9f9', borderRadius: 8, fontSize: 11 }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                          <div><span style={{ color: '#666' }}>Role:</span> <strong>{emp.position || 'FSE'}</strong></div>
+                          <div><span style={{ color: '#666' }}>Location:</span> <strong>{emp.location || '–'}</strong></div>
+                          <div style={{ gridColumn: '1 / -1' }}>
+                            <span style={{ color: '#666' }}>Employment Status:</span>{' '}
+                            <strong style={{ 
+                              color: emp.status === 'Active' ? '#2e7d32' : '#c62828',
+                              background: emp.status === 'Active' ? '#e6f4ea' : '#fdecea',
+                              padding: '2px 8px',
+                              borderRadius: 12,
+                              fontSize: 10
+                            }}>
+                              {emp.status || 'Not Found'}
+                            </strong>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
               </div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <button 
