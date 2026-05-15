@@ -80,6 +80,7 @@ export default function Register() {
     e.preventDefault();
     setError(''); setSuccess('');
     if (!photo) { setError('Profile photo is required'); return; }
+    if (form.phone.length !== 10) { setError('Phone number must be exactly 10 digits'); return; }
 
     const fd = new FormData();
     Object.entries(form).forEach(([k, v]) => fd.append(k, v));
@@ -156,7 +157,7 @@ export default function Register() {
           <div className="form-row">
             <div className="form-group">
               <label>Phone Number <span className="req">*</span></label>
-              <input type="tel" value={form.phone} onChange={set('phone')} placeholder="+91 XXXXX XXXXX" required />
+              <input type="tel" value={form.phone} onChange={e => { if (/^\d{0,10}$/.test(e.target.value)) set('phone')(e); }} placeholder="10-digit mobile number" maxLength={10} required />
             </div>
             <div className="form-group">
               <label>Email ID <span className="req">*</span></label>
