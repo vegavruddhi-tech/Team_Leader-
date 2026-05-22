@@ -115,14 +115,16 @@ export default function Dashboard() {
   useEffect(() => {
     if (teamForms.length === 0) return;
     
-    // Fetch verification for all team forms
-    const phones   = teamForms.map(f => f.customerNumber).join(',');
-    const names    = teamForms.map(f => encodeURIComponent(f.customerName || '')).join(',');
-    const products = teamForms.map(f => encodeURIComponent((f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim())).join(',');
-    const months   = teamForms.map(f => encodeURIComponent(new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' }))).join(',');
-    
-    fetch(`${API_BASE}/api/verify/bulk-admin?phones=${encodeURIComponent(phones)}&names=${names}&products=${products}&months=${months}`, {
-      headers: { Authorization: 'Bearer ' + token }
+    // Fetch verification for all team forms (POST to avoid URL length limit)
+    fetch(`${API_BASE}/api/verify/bulk-admin`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      body: JSON.stringify({
+        phones:   teamForms.map(f => f.customerNumber || ''),
+        names:    teamForms.map(f => f.customerName || ''),
+        products: teamForms.map(f => (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim()),
+        months:   teamForms.map(f => new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' })),
+      }),
     })
       .then(r => r.json())
       .then(async verifyMap => {
@@ -487,6 +489,33 @@ export default function Dashboard() {
             <h2 style={{ fontSize: 16, marginBottom: 2 }}>Welcome, {tl?.name?.split(' ')[0] || ''}!</h2>
             <p style={{ fontSize: 12, opacity: 0.85 }}>Team Lead · {tl?.location}</p>
           </div>
+          {/* Total Points badge */}
+          {(() => {
+            const counted = new Set();
+            let totalPts = 0;
+            myForms.forEach(f => {
+              if (f.status === 'Ready for Onboarding') {
+                const product = f.formFillingFor || f.tideProduct || f.brand || '';
+                const dedupKey = `${f.customerNumber}__${product.toLowerCase().trim()}`;
+                if (!counted.has(dedupKey)) {
+                  counted.add(dedupKey);
+                  totalPts += POINTS_MAP[normalizeProduct(product)] || 0;
+                }
+              }
+            });
+            totalPts = Math.round(totalPts * 10) / 10;
+            return (
+              <div style={{
+                position: 'absolute', right: 16, top: '50%', transform: 'translateY(-50%)',
+                background: 'rgba(255,255,255,0.15)', border: '1.5px solid rgba(255,255,255,0.3)',
+                borderRadius: 12, padding: '8px 16px', textAlign: 'center',
+                backdropFilter: 'blur(4px)',
+              }}>
+                <div style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.8)', textTransform: 'uppercase', letterSpacing: '1px' }}>TOTAL POINTS</div>
+                <div style={{ fontSize: 20, fontWeight: 800, color: '#fff', marginTop: 2 }}>{totalPts}</div>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Quick Overview */}
