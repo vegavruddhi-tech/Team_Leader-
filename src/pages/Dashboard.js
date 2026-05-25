@@ -784,7 +784,12 @@ export default function Dashboard() {
             const vc = VERIFY_COLOR[vStatus] || VERIFY_COLOR['Not Found'];
             return (
               <div key={form._id} style={{ marginBottom: '12px' }}>
-                <Link to={`/merchant/${form._id}`} className="merchant-row" style={{ animationDelay: `${i * 0.05}s`, display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div className="merchant-row" style={{ animationDelay: `${i * 0.05}s`, display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}
+                  onClick={(e) => {
+                    if (e.target.closest('.timeline-btn-wrapper') || e.target.closest('.MuiIconButton-root') || e.target.closest('.MuiBackdrop-root')) return;
+                    navigate(`/merchant/${form._id}`);
+                  }}
+                >
                   <div className="mr-avatar">{form.customerName?.charAt(0).toUpperCase()}</div>
                   <div className="mr-info" style={{ flex: 1 }}>
                     <div className="mr-name">{form.customerName}</div>
@@ -806,12 +811,12 @@ export default function Dashboard() {
                       const notCredit = !fp.includes('credit') && !p2.includes('credit') && !p3.includes('credit');
                       return isTide && notMSME && notInsurance && notCredit;
                     })() && (
-                      <div onClick={(e) => { e.preventDefault(); e.stopPropagation(); }} style={{ marginTop: 2 }}>
+                      <div style={{ marginTop: 2 }}>
                         <TideMerchantTimeline phone={form.customerNumber} customerName={form.customerName} />
                       </div>
                     )}
                   </div>
-                </Link>
+                </div>
               </div>
             );
           })

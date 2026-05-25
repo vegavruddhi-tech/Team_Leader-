@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import ReactDOM from 'react-dom';
 import {
   Box, Typography, Card, CardContent, CircularProgress, Chip,
   Tooltip, IconButton, Collapse, Button, Alert
@@ -121,7 +122,7 @@ function TideMerchantTimeline({ phone, customerName, inline = false }) {
       </Box>
 
       {/* Backdrop */}
-      {expanded && (
+      {expanded && ReactDOM.createPortal(
         <Box
           onClick={toggleTimeline}
           sx={{
@@ -130,32 +131,34 @@ function TideMerchantTimeline({ phone, customerName, inline = false }) {
             left: 0,
             right: 0,
             bottom: 0,
-            bgcolor: 'rgba(0, 0, 0, 0.7)',
+            bgcolor: 'rgba(0, 0, 0, 0.85)',
             zIndex: 99999,
-            backdropFilter: 'blur(2px)',
+            backdropFilter: 'blur(4px)',
             pointerEvents: 'all'
           }}
-        />
+        />,
+        document.body
       )}
 
       {/* Timeline Content */}
-      {expanded && (
+      {expanded && ReactDOM.createPortal(
         <Card 
           onClick={(e) => e.stopPropagation()}
           sx={{
             position: 'fixed',
-            top: { xs: 0, sm: '50%' },
-            left: { xs: 0, sm: '50%' },
-            transform: { xs: 'none', sm: 'translate(-50%, -50%)' },
-            width: { xs: '100%', sm: '90%' },
-            maxWidth: { xs: '100%', sm: 900 },
-            height: { xs: '100vh', sm: 'auto' },
-            maxHeight: { xs: '100vh', sm: '90vh' },
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            width: '100%',
+            height: '100vh',
+            maxWidth: '100%',
+            maxHeight: '100vh',
             overflow: 'auto',
-            border: `3px solid ${BRAND.primary}`,
-            borderRadius: { xs: 0, sm: 3 },
+            border: 'none',
+            borderRadius: 0,
             bgcolor: '#ffffff',
-            boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+            boxShadow: 'none',
             zIndex: 100000
           }}>
           {/* Close Button */}
@@ -551,7 +554,8 @@ function TideMerchantTimeline({ phone, customerName, inline = false }) {
               </Box>
             )}
           </CardContent>
-        </Card>
+        </Card>,
+        document.body
       )}
     </>
   );
