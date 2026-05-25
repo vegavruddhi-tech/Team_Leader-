@@ -5,8 +5,8 @@ import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 
 // Updated product list per new form format
-const PRODUCTS = ['Tide','Tide-BT','Insurance 2W-4W','PineLab','Tide Insurance','Tide-MSME','Tide Credit Card'];
-const BRAND_NAMES = ['Tide','Tide-BT','Insurance 2W-4W','PineLab'];
+const PRODUCTS = ['Tide','Tide BT','Insurance 2W-4W','PineLab','Tide Insurance','Tide MSME','Tide Credit Card'];
+const BRAND_NAMES = ['Tide','Tide BT','Insurance 2W-4W','PineLab'];
 
 function FormCard({ icon, title, sub, children }) {
   return (
