@@ -540,6 +540,9 @@ export default function Dashboard() {
             let totalPts = 0;
             myForms.forEach(f => {
               if (f.status === 'Ready for Onboarding') {
+                // Filter by selected month/year
+                if (selYear && new Date(f.createdAt).getFullYear() !== parseInt(selYear)) return;
+                if (selMonth !== '' && new Date(f.createdAt).getMonth() !== parseInt(selMonth)) return;
                 const product = f.formFillingFor || f.tideProduct || f.brand || '';
                 const productLower = product.toLowerCase().trim();
                 const vKey = productLower ? `${f.customerNumber}__${productLower}` : f.customerNumber;
