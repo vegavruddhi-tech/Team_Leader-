@@ -51,6 +51,7 @@ export default function Dashboard() {
   const [verificationMap, setVerificationMap] = useState({}); // Store full verification map for drill-down
   const [taskModal, setTaskModal] = useState(null); // { form: merchantForm, verification, existingTask, canSendReminder, daysSinceCreated }
   const [taskNotificationCount, setTaskNotificationCount] = useState(0);
+  const [myFormsVerifyMap, setMyFormsVerifyMap] = useState({}); // Verification map for TL's own forms
   const [dateFilter, setDateFilter] = useState('all');
   const [fromDate,   setFromDate]   = useState('');
   const [toDate,     setToDate]     = useState('');
@@ -86,6 +87,50 @@ export default function Dashboard() {
   }, [token]);
 
   useEffect(() => { loadStats(); loadEmployees(); loadForms(); }, [loadStats, loadEmployees, loadForms]);
+
+  // Fetch verification for TL's own forms (same logic as Manager Panel)
+  useEffect(() => {
+    if (myForms.length === 0) return;
+    fetch(`${API_BASE}/api/verify/bulk-admin`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      body: JSON.stringify({
+        phones:   myForms.map(f => f.customerNumber || ''),
+        names:    myForms.map(f => f.customerName || ''),
+        products: myForms.map(f => (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim()),
+        months:   myForms.map(f => f.createdAt ? new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' }) : ''),
+      }),
+    })
+      .then(r => r.json())
+      .then(vm => {
+        setMyFormsVerifyMap(vm || {});
+
+        // Save verified points to backend (same as FSE panel)
+        const counted = new Set();
+        let autoPts = 0;
+        myForms.forEach(f => {
+          if (f.status !== 'Ready for Onboarding') return;
+          const product = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
+          const vKey = product ? `${f.customerNumber}__${product}` : f.customerNumber;
+          if (vm[vKey]?.status === 'Fully Verified') {
+            const dedupKey = `${f.customerNumber}__${product}`;
+            if (counted.has(dedupKey)) return;
+            counted.add(dedupKey);
+            const productName = f.formFillingFor || f.tideProduct || f.brand || '';
+            autoPts += POINTS_MAP[normalizeProduct(productName)] || 0;
+          }
+        });
+        autoPts = Math.round(autoPts * 10) / 10;
+
+        // Persist to backend
+        fetch(`${API_BASE}/api/forms/save-verified-points`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+          body: JSON.stringify({ verifiedPoints: autoPts })
+        }).catch(() => {});
+      })
+      .catch(() => setMyFormsVerifyMap({}));
+  }, [myForms, token]);
 
   // Fetch task notifications for TL
   useEffect(() => {
@@ -496,10 +541,15 @@ export default function Dashboard() {
             myForms.forEach(f => {
               if (f.status === 'Ready for Onboarding') {
                 const product = f.formFillingFor || f.tideProduct || f.brand || '';
-                const dedupKey = `${f.customerNumber}__${product.toLowerCase().trim()}`;
-                if (!counted.has(dedupKey)) {
-                  counted.add(dedupKey);
-                  totalPts += POINTS_MAP[normalizeProduct(product)] || 0;
+                const productLower = product.toLowerCase().trim();
+                const vKey = productLower ? `${f.customerNumber}__${productLower}` : f.customerNumber;
+                const vStatus = myFormsVerifyMap[vKey]?.status;
+                if (vStatus === 'Fully Verified') {
+                  const dedupKey = `${f.customerNumber}__${productLower}`;
+                  if (!counted.has(dedupKey)) {
+                    counted.add(dedupKey);
+                    totalPts += POINTS_MAP[normalizeProduct(product)] || 0;
+                  }
                 }
               }
             });
@@ -681,7 +731,8 @@ export default function Dashboard() {
                 // Check verification status
                 const fp = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
                 const vKey = fp ? `${f.customerNumber}__${fp}` : f.customerNumber;
-                const verification = verificationMap[vKey];
+                const vMap = activeTab === 'my' ? myFormsVerifyMap : verificationMap;
+                const verification = vMap[vKey];
                 
                 return verification?.status === 'Fully Verified';
               }).length;
@@ -718,8 +769,21 @@ export default function Dashboard() {
           activeForms.map((form, i) => {
             const sc   = STATUS_COLOR[form.status] || { color: '#333', bg: '#f5f5f5' };
             const date = new Date(form.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+            // Get verification status for this form
+            const product = (form.formFillingFor || form.tideProduct || form.brand || '').toLowerCase().trim();
+            const vKey = product ? `${form.customerNumber}__${product}` : form.customerNumber;
+            const verification = myFormsVerifyMap[vKey];
+            const vStatus = verification ? verification.status : 'Not Found';
+            const VERIFY_COLOR = {
+              'Fully Verified':   { color: '#2e7d32', bg: '#e6f4ea', icon: '✓' },
+              'Partially Done':   { color: '#e65100', bg: '#fff3e0', icon: '◐' },
+              'Not Verified':     { color: '#c62828', bg: '#fdecea', icon: '✗' },
+              'Critical Failure': { color: '#c62828', bg: '#fdecea', icon: '✗' },
+              'Not Found':        { color: '#757575', bg: '#f5f5f5', icon: '?' },
+            };
+            const vc = VERIFY_COLOR[vStatus] || VERIFY_COLOR['Not Found'];
             return (
-              <div key={form._id} style={{ marginBottom: '12px', position: 'relative' }}>
+              <div key={form._id} style={{ marginBottom: '12px' }}>
                 <Link to={`/merchant/${form._id}`} className="merchant-row" style={{ animationDelay: `${i * 0.05}s`, display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <div className="mr-avatar">{form.customerName?.charAt(0).toUpperCase()}</div>
                   <div className="mr-info" style={{ flex: 1 }}>
@@ -729,20 +793,29 @@ export default function Dashboard() {
                       <span>📍 {form.location}</span>
                     </div>
                   </div>
-                  <div className="mr-right">
-                    <span className="mr-status" style={{ background: sc.bg, color: sc.color }}>{form.status}</span>
+                  <div className="mr-right" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+                    <span className="mr-status" style={{ background: vc.bg, color: vc.color }}>{vc.icon} {vStatus}</span>
                     <span className="mr-date">{date}</span>
+                    {(() => {
+                      const fp = (form.formFillingFor || '').toLowerCase().trim();
+                      const p2 = (form.tideProduct || '').toLowerCase().trim();
+                      const p3 = (form.brand || '').toLowerCase().trim();
+                      const isTide = (fp === 'tide' || p2 === 'tide' || p3 === 'tide');
+                      const notMSME = !fp.includes('msme') && !p2.includes('msme') && !p3.includes('msme');
+                      const notInsurance = !fp.includes('insurance') && !p2.includes('insurance') && !p3.includes('insurance');
+                      const notCredit = !fp.includes('credit') && !p2.includes('credit') && !p3.includes('credit');
+                      return isTide && notMSME && notInsurance && notCredit;
+                    })() && (
+                      <div onClick={(e) => { e.preventDefault(); e.stopPropagation(); }} style={{ marginTop: 2 }}>
+                        <TideMerchantTimeline phone={form.customerNumber} customerName={form.customerName} />
+                      </div>
+                    )}
                   </div>
                 </Link>
-                {/* Timeline button - below the date, inline */}
-                {(form.brand === 'Tide' && form.tideProduct === 'Tide') && (
-                  <div onClick={(e) => e.stopPropagation()} style={{ display: 'flex', justifyContent: 'flex-end', paddingRight: 4, marginTop: 4 }}>
-                    <TideMerchantTimeline phone={form.customerNumber} customerName={form.customerName} />
-                  </div>
-                )}
               </div>
             );
           })
+        
         ) : (
           // Team Forms — group by FSE name, show FSE list
           (() => {
