@@ -5,8 +5,8 @@ import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 
 // Updated product list per new form format
-const PRODUCTS = ['Tide','Tide BT','Insurance 2W-4W','PineLab','Tide Insurance','Tide MSME','Tide Credit Card'];
-const BRAND_NAMES = ['Tide','Tide BT','Insurance 2W-4W','PineLab'];
+const PRODUCTS = ['Tide','Insurance 2W-4W','PineLab','Tide Insurance','Tide MSME','Tide Credit Card'];
+const BRAND_NAMES = ['Tide','Insurance 2W-4W','PineLab'];
 
 function FormCard({ icon, title, sub, children }) {
   return (
@@ -142,7 +142,7 @@ export default function MerchantForm() {
             </div>
             <div className="form-group">
               <label>Customer Number <span className="req">*</span></label>
-              <input type="tel" value={customerNumber} onChange={e => setCustomerNumber(e.target.value)} placeholder="Enter phone number" required />
+              <input type="tel" value={customerNumber} onChange={e => { if (e.target.value.length <= 10) setCustomerNumber(e.target.value.replace(/\D/g, '')); }} placeholder="Enter phone number" maxLength={10} required />
             </div>
             <div className="form-group">
               <label>Location <span className="req">*</span></label>

@@ -45,13 +45,12 @@ export default function Dashboard() {
   const [fseVerifyData, setFseVerifyData] = useState({}); // { formId: verificationData }
   const [loadingVerify, setLoadingVerify] = useState(false);
   const [fsePoints, setFsePoints] = useState({}); // { fseName: points }
-  const [verificationStats, setVerificationStats] = useState({ fullyVerified: 0, criticalFailure: 0, partiallyDone: 0, notFound: 0 }); // Verification KPIs
+  const [verificationStats, setVerificationStats] = useState({ fullyVerified: 0, partiallyDone: 0, notFound: 0 }); // Verification KPIs
   const [verificationModal, setVerificationModal] = useState(null); // { status, products: { productName: count } }
   const [verificationDrillDown, setVerificationDrillDown] = useState(null); // { status, product, forms: [] }
   const [verificationMap, setVerificationMap] = useState({}); // Store full verification map for drill-down
   const [taskModal, setTaskModal] = useState(null); // { form: merchantForm, verification, existingTask, canSendReminder, daysSinceCreated }
   const [taskNotificationCount, setTaskNotificationCount] = useState(0);
-  const [myFormsVerifyMap, setMyFormsVerifyMap] = useState({}); // Verification map for TL's own forms
   const [dateFilter, setDateFilter] = useState('all');
   const [fromDate,   setFromDate]   = useState('');
   const [toDate,     setToDate]     = useState('');
@@ -88,50 +87,6 @@ export default function Dashboard() {
 
   useEffect(() => { loadStats(); loadEmployees(); loadForms(); }, [loadStats, loadEmployees, loadForms]);
 
-  // Fetch verification for TL's own forms (same logic as Manager Panel)
-  useEffect(() => {
-    if (myForms.length === 0) return;
-    fetch(`${API_BASE}/api/verify/bulk-admin`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-      body: JSON.stringify({
-        phones:   myForms.map(f => f.customerNumber || ''),
-        names:    myForms.map(f => f.customerName || ''),
-        products: myForms.map(f => (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim()),
-        months:   myForms.map(f => f.createdAt ? new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' }) : ''),
-      }),
-    })
-      .then(r => r.json())
-      .then(vm => {
-        setMyFormsVerifyMap(vm || {});
-
-        // Save verified points to backend (same as FSE panel)
-        const counted = new Set();
-        let autoPts = 0;
-        myForms.forEach(f => {
-          if (f.status !== 'Ready for Onboarding') return;
-          const product = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
-          const vKey = product ? `${f.customerNumber}__${product}` : f.customerNumber;
-          if (vm[vKey]?.status === 'Fully Verified') {
-            const dedupKey = `${f.customerNumber}__${product}`;
-            if (counted.has(dedupKey)) return;
-            counted.add(dedupKey);
-            const productName = f.formFillingFor || f.tideProduct || f.brand || '';
-            autoPts += POINTS_MAP[normalizeProduct(productName)] || 0;
-          }
-        });
-        autoPts = Math.round(autoPts * 10) / 10;
-
-        // Persist to backend
-        fetch(`${API_BASE}/api/forms/save-verified-points`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-          body: JSON.stringify({ verifiedPoints: autoPts })
-        }).catch(() => {});
-      })
-      .catch(() => setMyFormsVerifyMap({}));
-  }, [myForms, token]);
-
   // Fetch task notifications for TL
   useEffect(() => {
     if (!token) return;
@@ -160,16 +115,14 @@ export default function Dashboard() {
   useEffect(() => {
     if (teamForms.length === 0) return;
     
-    // Fetch verification for all team forms (POST to avoid URL length limit)
-    fetch(`${API_BASE}/api/verify/bulk-admin`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-      body: JSON.stringify({
-        phones:   teamForms.map(f => f.customerNumber || ''),
-        names:    teamForms.map(f => f.customerName || ''),
-        products: teamForms.map(f => (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim()),
-        months:   teamForms.map(f => new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' })),
-      }),
+    // Fetch verification for all team forms
+    const phones   = teamForms.map(f => f.customerNumber).join(',');
+    const names    = teamForms.map(f => encodeURIComponent(f.customerName || '')).join(',');
+    const products = teamForms.map(f => encodeURIComponent((f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim())).join(',');
+    const months   = teamForms.map(f => encodeURIComponent(new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' }))).join(',');
+    
+    fetch(`${API_BASE}/api/verify/bulk-admin?phones=${encodeURIComponent(phones)}&names=${names}&products=${products}&months=${months}`, {
+      headers: { Authorization: 'Bearer ' + token }
     })
       .then(r => r.json())
       .then(async verifyMap => {
@@ -181,7 +134,6 @@ export default function Dashboard() {
         
         // Calculate verification stats with product breakdown
         let fullyVerified = 0;
-        let criticalFailure = 0;
         let partiallyDone = 0;
         let notFound = 0;
         
@@ -194,7 +146,6 @@ export default function Dashboard() {
           // Count verification statuses
           if (verification) {
             if (verification.status === 'Fully Verified') fullyVerified++;
-            else if (verification.status === 'Critical Failure') criticalFailure++;
             else if (verification.status === 'Partially Done') partiallyDone++;
             else notFound++;
           } else {
@@ -243,7 +194,7 @@ export default function Dashboard() {
         } catch { /* ignore */ }
 
         setFsePoints(finalPoints);
-        setVerificationStats({ fullyVerified, criticalFailure, partiallyDone, notFound });
+        setVerificationStats({ fullyVerified, partiallyDone, notFound });
       })
       .catch(console.error);
   }, [teamForms, token]);
@@ -503,7 +454,7 @@ export default function Dashboard() {
 
   // Recalculate verification stats based on activeForms + existing verificationMap
   const activeVerificationStats = (() => {
-    let fv = 0, pd = 0, nf = 0, cf = 0;
+    let fv = 0, pd = 0, nf = 0;
     activeForms.forEach(form => {
       const product = (form.formFillingFor || form.tideProduct || form.brand || '').toLowerCase().trim();
       const vKey = product ? `${form.customerNumber}__${product}` : form.customerNumber;
@@ -511,13 +462,12 @@ export default function Dashboard() {
       if (verification) {
         if (verification.status === 'Fully Verified') fv++;
         else if (verification.status === 'Partially Done') pd++;
-        else if (verification.status === 'Critical Failure') cf++;
         else nf++;
       } else {
         nf++;
       }
     });
-    return { fullyVerified: fv, partiallyDone: pd, notFound: nf, criticalFailure: cf };
+    return { fullyVerified: fv, partiallyDone: pd, notFound: nf };
   })();
 
   return (
@@ -534,41 +484,6 @@ export default function Dashboard() {
             <h2 style={{ fontSize: 16, marginBottom: 2 }}>Welcome, {tl?.name?.split(' ')[0] || ''}!</h2>
             <p style={{ fontSize: 12, opacity: 0.85 }}>Team Lead · {tl?.location}</p>
           </div>
-          {/* Total Points badge */}
-          {(() => {
-            const counted = new Set();
-            let totalPts = 0;
-            myForms.forEach(f => {
-              if (f.status === 'Ready for Onboarding') {
-                // Filter by selected month/year
-                if (selYear && new Date(f.createdAt).getFullYear() !== parseInt(selYear)) return;
-                if (selMonth !== '' && new Date(f.createdAt).getMonth() !== parseInt(selMonth)) return;
-                const product = f.formFillingFor || f.tideProduct || f.brand || '';
-                const productLower = product.toLowerCase().trim();
-                const vKey = productLower ? `${f.customerNumber}__${productLower}` : f.customerNumber;
-                const vStatus = myFormsVerifyMap[vKey]?.status;
-                if (vStatus === 'Fully Verified') {
-                  const dedupKey = `${f.customerNumber}__${productLower}`;
-                  if (!counted.has(dedupKey)) {
-                    counted.add(dedupKey);
-                    totalPts += POINTS_MAP[normalizeProduct(product)] || 0;
-                  }
-                }
-              }
-            });
-            totalPts = Math.round(totalPts * 10) / 10;
-            return (
-              <div style={{
-                position: 'absolute', right: 16, top: '50%', transform: 'translateY(-50%)',
-                background: 'rgba(255,255,255,0.15)', border: '1.5px solid rgba(255,255,255,0.3)',
-                borderRadius: 12, padding: '8px 16px', textAlign: 'center',
-                backdropFilter: 'blur(4px)',
-              }}>
-                <div style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.8)', textTransform: 'uppercase', letterSpacing: '1px' }}>TOTAL POINTS</div>
-                <div style={{ fontSize: 20, fontWeight: 800, color: '#fff', marginTop: 2 }}>{totalPts}</div>
-              </div>
-            );
-          })()}
         </div>
 
         {/* Quick Overview */}
@@ -629,10 +544,9 @@ export default function Dashboard() {
           ))}
           {/* Verification Status KPIs */}
           {[
-            { label: 'Fully Verified',  value: activeVerificationStats.fullyVerified,  icon: '✓', color: '#2e7d32', status: 'Fully Verified' },
-            { label: 'Critical Failure', value: activeVerificationStats.criticalFailure || 0, icon: '⚠', color: '#c62828', status: 'Critical Failure' },
-            { label: 'Partial',         value: activeVerificationStats.partiallyDone,  icon: '◑', color: '#f57f17', status: 'Partially Done' },
-            { label: 'Not Found',       value: activeVerificationStats.notFound,       icon: '–', color: '#888',    status: 'Not Found' },
+            { label: 'Fully Verified', value: activeVerificationStats.fullyVerified, icon: '✓', color: '#2e7d32', status: 'Fully Verified' },
+            { label: 'Partial',        value: activeVerificationStats.partiallyDone, icon: '◑', color: '#f57f17', status: 'Partially Done' },
+            { label: 'Not Found',      value: activeVerificationStats.notFound,      icon: '–', color: '#888',    status: 'Not Found' },
           ].map(k => (
             <div key={k.label} className="kpi-card"
               style={{ padding: '4px 8px', flex: '1 1 auto', minWidth: 60, borderTop: `3px solid ${k.color}`, cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 1 }}
@@ -734,8 +648,7 @@ export default function Dashboard() {
                 // Check verification status
                 const fp = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
                 const vKey = fp ? `${f.customerNumber}__${fp}` : f.customerNumber;
-                const vMap = activeTab === 'my' ? myFormsVerifyMap : verificationMap;
-                const verification = vMap[vKey];
+                const verification = verificationMap[vKey];
                 
                 return verification?.status === 'Fully Verified';
               }).length;
@@ -772,27 +685,9 @@ export default function Dashboard() {
           activeForms.map((form, i) => {
             const sc   = STATUS_COLOR[form.status] || { color: '#333', bg: '#f5f5f5' };
             const date = new Date(form.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
-            // Get verification status for this form
-            const product = (form.formFillingFor || form.tideProduct || form.brand || '').toLowerCase().trim();
-            const vKey = product ? `${form.customerNumber}__${product}` : form.customerNumber;
-            const verification = myFormsVerifyMap[vKey];
-            const vStatus = verification ? verification.status : 'Not Found';
-            const VERIFY_COLOR = {
-              'Fully Verified':   { color: '#2e7d32', bg: '#e6f4ea', icon: '✓' },
-              'Partially Done':   { color: '#e65100', bg: '#fff3e0', icon: '◐' },
-              'Not Verified':     { color: '#c62828', bg: '#fdecea', icon: '✗' },
-              'Critical Failure': { color: '#c62828', bg: '#fdecea', icon: '✗' },
-              'Not Found':        { color: '#757575', bg: '#f5f5f5', icon: '?' },
-            };
-            const vc = VERIFY_COLOR[vStatus] || VERIFY_COLOR['Not Found'];
             return (
-              <div key={form._id} style={{ marginBottom: '12px' }}>
-                <div className="merchant-row" style={{ animationDelay: `${i * 0.05}s`, display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}
-                  onClick={(e) => {
-                    if (e.target.closest('.timeline-btn-wrapper') || e.target.closest('.MuiIconButton-root') || e.target.closest('.MuiBackdrop-root')) return;
-                    navigate(`/merchant/${form._id}`);
-                  }}
-                >
+              <div key={form._id} style={{ marginBottom: '12px', position: 'relative' }}>
+                <Link to={`/merchant/${form._id}`} className="merchant-row" style={{ animationDelay: `${i * 0.05}s`, display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <div className="mr-avatar">{form.customerName?.charAt(0).toUpperCase()}</div>
                   <div className="mr-info" style={{ flex: 1 }}>
                     <div className="mr-name">{form.customerName}</div>
@@ -801,29 +696,20 @@ export default function Dashboard() {
                       <span>📍 {form.location}</span>
                     </div>
                   </div>
-                  <div className="mr-right" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
-                    <span className="mr-status" style={{ background: vc.bg, color: vc.color }}>{vc.icon} {vStatus}</span>
+                  <div className="mr-right">
+                    <span className="mr-status" style={{ background: sc.bg, color: sc.color }}>{form.status}</span>
                     <span className="mr-date">{date}</span>
-                    {(() => {
-                      const fp = (form.formFillingFor || '').toLowerCase().trim();
-                      const p2 = (form.tideProduct || '').toLowerCase().trim();
-                      const p3 = (form.brand || '').toLowerCase().trim();
-                      const isTide = (fp === 'tide' || p2 === 'tide' || p3 === 'tide');
-                      const notMSME = !fp.includes('msme') && !p2.includes('msme') && !p3.includes('msme');
-                      const notInsurance = !fp.includes('insurance') && !p2.includes('insurance') && !p3.includes('insurance');
-                      const notCredit = !fp.includes('credit') && !p2.includes('credit') && !p3.includes('credit');
-                      return isTide && notMSME && notInsurance && notCredit;
-                    })() && (
-                      <div style={{ marginTop: 2 }}>
-                        <TideMerchantTimeline phone={form.customerNumber} customerName={form.customerName} />
-                      </div>
-                    )}
                   </div>
-                </div>
+                </Link>
+                {/* Timeline button - below the date, inline */}
+                {(form.brand === 'Tide' && form.tideProduct === 'Tide') && (
+                  <div onClick={(e) => e.stopPropagation()} style={{ display: 'flex', justifyContent: 'flex-end', paddingRight: 4, marginTop: 4 }}>
+                    <TideMerchantTimeline phone={form.customerNumber} customerName={form.customerName} />
+                  </div>
+                )}
               </div>
             );
           })
-        
         ) : (
           // Team Forms — group by FSE name, show FSE list
           (() => {
@@ -1039,37 +925,8 @@ export default function Dashboard() {
           <div style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 640, maxHeight: '85vh', boxShadow: '0 20px 60px rgba(0,0,0,0.25)', display: 'flex', flexDirection: 'column' }}>
             <div style={{ padding: '18px 24px', borderBottom: '1px solid #f0f5f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
-                <h3 style={{ fontSize: 16, fontWeight: 800, color: 'var(--green-dark)', margin: 0 }}>
-                  📋 {selectedFSE.name} <span style={{ fontSize: 10, color: '#2e7d32', fontWeight: 700, background: '#e6f4ea', padding: '2px 6px', borderRadius: 4 }}>[v3.0]</span>
-                </h3>
+                <h3 style={{ fontSize: 16, fontWeight: 800, color: 'var(--green-dark)', margin: 0 }}>📋 {selectedFSE.name}</h3>
                 <div style={{ fontSize: 12, color: 'var(--text-light)', marginTop: 2 }}>{selectedFSE.forms.length} form{selectedFSE.forms.length > 1 ? 's' : ''} submitted</div>
-                {/* Employee Details */}
-                {(() => {
-                  const emp = employees.find(e => (e.newJoinerName || '').toLowerCase().trim() === selectedFSE.name.toLowerCase().trim());
-                  if (emp) {
-                    return (
-                      <div style={{ marginTop: 8, padding: '8px 12px', background: '#f9f9f9', borderRadius: 8, fontSize: 11 }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-                          <div><span style={{ color: '#666' }}>Role:</span> <strong>{emp.position || 'FSE'}</strong></div>
-                          <div><span style={{ color: '#666' }}>Location:</span> <strong>{emp.location || '–'}</strong></div>
-                          <div style={{ gridColumn: '1 / -1' }}>
-                            <span style={{ color: '#666' }}>Employment Status:</span>{' '}
-                            <strong style={{ 
-                              color: emp.status === 'Active' ? '#2e7d32' : '#c62828',
-                              background: emp.status === 'Active' ? '#e6f4ea' : '#fdecea',
-                              padding: '2px 8px',
-                              borderRadius: 12,
-                              fontSize: 10
-                            }}>
-                              {emp.status || 'Not Found'}
-                            </strong>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  }
-                  return null;
-                })()}
               </div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <button 
