@@ -9,6 +9,7 @@ import MerchantForm from './pages/MerchantForm';
 import MerchantDetail from './pages/MerchantDetail';
 import Tasks from './pages/Tasks';
 import MySalary from './pages/MySalary';
+import InstallPWA from './components/InstallPWA';
 
 function PrivateRoute({ children }) {
   return localStorage.getItem('token') ? children : <Navigate to="/" replace />;
@@ -17,6 +18,7 @@ function PrivateRoute({ children }) {
 export default function App() {
   return (
     <BrowserRouter>
+      <InstallPWA />
       <Routes>
         <Route path="/"              element={<Login />} />
         <Route path="/register"      element={<Register />} />
