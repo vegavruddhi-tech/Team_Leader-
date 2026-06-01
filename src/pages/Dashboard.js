@@ -5,6 +5,11 @@ import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 import TideMerchantTimeline from '../components/TideMerchantTimeline';
 
+// 🔧 VERIFICATION KEY CONSISTENCY FIX:
+// Helper functions ensure consistent product extraction and key generation
+// across all verification operations (fetch, count, lookup).
+// This prevents key mismatches that caused "Fully Verified: 0" KPI issue.
+
 const STATUS_COLOR = {
   'Ready for Onboarding':          { color: '#2e7d32', bg: '#e6f4ea' },
   'Not Interested':                { color: '#c62828', bg: '#fdecea' },
@@ -30,6 +35,17 @@ const normalizeProduct = (product) => {
   return product; // fallback
 };
 
+// 🔧 Helper function to extract product consistently across all operations
+const getFormProduct = (form) => {
+  return (form.formFillingFor || form.tideProduct || form.brand || '').toLowerCase().trim();
+};
+
+// 🔧 Helper function to generate verification key consistently
+const getVerificationKey = (form) => {
+  const product = getFormProduct(form);
+  return product ? `${form.customerNumber}__${product}` : form.customerNumber;
+};
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const token = localStorage.getItem('token');
@@ -49,6 +65,7 @@ export default function Dashboard() {
   const [verificationModal, setVerificationModal] = useState(null); // { status, products: { productName: count } }
   const [verificationDrillDown, setVerificationDrillDown] = useState(null); // { status, product, forms: [] }
   const [verificationMap, setVerificationMap] = useState({}); // Store full verification map for drill-down
+  const [isLoadingVerification, setIsLoadingVerification] = useState(false); // Loading state for verification fetch
   const [taskModal, setTaskModal] = useState(null); // { form: merchantForm, verification, existingTask, canSendReminder, daysSinceCreated }
   const [taskNotificationCount, setTaskNotificationCount] = useState(0);
   const [dateFilter, setDateFilter] = useState('all');
@@ -111,39 +128,92 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, [token]);
 
-  // Calculate points for each FSE
+  // 🔧 NEW APPROACH: Fetch verification on-demand for active forms only
+  // This uses the same working API pattern as individual form verification
+  // Benefits:
+  // - Uses the proven working API call (same as individual forms)
+  // - Only fetches verification for currently displayed forms (faster)
+  // - Automatically updates when filters change
+  // - No failed bulk API calls at page load
   useEffect(() => {
-    if (teamForms.length === 0) return;
+    // Calculate active forms based on current filters
+    let list = activeTab === 'my' ? myForms : teamForms;
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     
-    // Fetch verification for all team forms
-    const phones   = teamForms.map(f => f.customerNumber).join(',');
-    const names    = teamForms.map(f => encodeURIComponent(f.customerName || '')).join(',');
-    const products = teamForms.map(f => encodeURIComponent((f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim())).join(',');
-    const months   = teamForms.map(f => encodeURIComponent(new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' }))).join(',');
+    if (dateFilter === 'today') list = list.filter(f => new Date(f.createdAt) >= today);
+    else if (dateFilter === 'week') {
+      const ws = new Date(today); ws.setDate(today.getDate() - today.getDay());
+      list = list.filter(f => new Date(f.createdAt) >= ws);
+    } else if (dateFilter === 'month') {
+      const ms = new Date(now.getFullYear(), now.getMonth(), 1);
+      list = list.filter(f => new Date(f.createdAt) >= ms);
+    } else if (dateFilter === 'custom' && (fromDate || toDate)) {
+      list = list.filter(f => {
+        const d = new Date(f.createdAt);
+        if (fromDate && d < new Date(fromDate)) return false;
+        if (toDate && d > new Date(toDate + 'T23:59:59')) return false;
+        return true;
+      });
+    }
     
-    fetch(`${API_BASE}/api/verify/bulk-admin?phones=${encodeURIComponent(phones)}&names=${names}&products=${products}&months=${months}`, {
-      headers: { Authorization: 'Bearer ' + token }
-    })
-      .then(r => r.json())
+    if (selYear) list = list.filter(f => new Date(f.createdAt).getFullYear() === parseInt(selYear));
+    if (selMonth !== '') list = list.filter(f => new Date(f.createdAt).getMonth() === parseInt(selMonth));
+    if (selProduct) {
+      const sp = selProduct.toLowerCase().trim();
+      list = list.filter(f => {
+        const p1 = (f.formFillingFor || '').toLowerCase().trim();
+        const p2 = (f.tideProduct || '').toLowerCase().trim();
+        const p3 = (f.brand || '').toLowerCase().trim();
+        if (sp === 'tide msme') return p1.includes('msme') || p2.includes('msme') || p3.includes('msme');
+        if (sp === 'tide insurance') return p1.includes('insurance') || p2.includes('insurance') || p3.includes('insurance');
+        if (sp === 'tide credit card') return p1.includes('credit') || p2.includes('credit') || p3.includes('credit');
+        if (sp === 'tide') {
+          const isTide = (p1 === 'tide' || p2 === 'tide' || p3 === 'tide');
+          const notMSME = !p1.includes('msme') && !p2.includes('msme') && !p3.includes('msme');
+          const notInsurance = !p1.includes('insurance') && !p2.includes('insurance') && !p3.includes('insurance');
+          const notCredit = !p1.includes('credit') && !p2.includes('credit') && !p3.includes('credit');
+          return isTide && notMSME && notInsurance && notCredit;
+        }
+        return p1 === sp || p2 === sp || p3 === sp;
+      });
+    }
+
+    // Fetch verification for filtered forms
+    if (list.length === 0) {
+      setVerificationStats({ fullyVerified: 0, partiallyDone: 0, notFound: 0 });
+      setVerificationMap({});
+      setIsLoadingVerification(false);
+      return;
+    }
+
+    setIsLoadingVerification(true);
+    
+    const phones = list.map(f => f.customerNumber).join(',');
+    const names = list.map(f => encodeURIComponent(f.customerName || '')).join(',');
+    const products = list.map(f => encodeURIComponent(getFormProduct(f))).join(',');
+    const months = list.map(f => encodeURIComponent(new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' }))).join(',');
+    
+    fetch(
+      `${API_BASE}/api/verify/bulk-admin?phones=${encodeURIComponent(phones)}&names=${names}&products=${products}&months=${months}`,
+      { headers: { Authorization: 'Bearer ' + token } }
+    )
+      .then(r => {
+        if (!r.ok) throw new Error('Verification fetch failed');
+        return r.json();
+      })
       .then(async verifyMap => {
-        // Store verification map for drill-down
         setVerificationMap(verifyMap);
         
-        // Calculate points per FSE
-        const pointsByFSE = {};
-        
-        // Calculate verification stats with product breakdown
+        // Calculate stats
         let fullyVerified = 0;
         let partiallyDone = 0;
         let notFound = 0;
         
-        teamForms.forEach(form => {
-          const fseName = form.employeeName || 'Unknown';
-          const product = (form.formFillingFor || form.tideProduct || form.brand || '').toLowerCase().trim();
-          const vKey = product ? `${form.customerNumber}__${product}` : form.customerNumber;
+        list.forEach(form => {
+          const vKey = getVerificationKey(form);
           const verification = verifyMap[vKey];
           
-          // Count verification statuses
           if (verification) {
             if (verification.status === 'Fully Verified') fullyVerified++;
             else if (verification.status === 'Partially Done') partiallyDone++;
@@ -151,8 +221,17 @@ export default function Dashboard() {
           } else {
             notFound++;
           }
+        });
+        
+        setVerificationStats({ fullyVerified, partiallyDone, notFound });
+        
+        // Calculate FSE points
+        const pointsByFSE = {};
+        list.forEach(form => {
+          const fseName = form.employeeName || 'Unknown';
+          const vKey = getVerificationKey(form);
+          const verification = verifyMap[vKey];
           
-          // Calculate points
           if (verification && verification.status === 'Fully Verified') {
             const productName = form.formFillingFor || (form.brand === 'Tide' && form.tideProduct ? form.tideProduct : form.brand) || '';
             const points = POINTS_MAP[normalizeProduct(productName)] || 0;
@@ -161,7 +240,6 @@ export default function Dashboard() {
               pointsByFSE[fseName] = { total: 0, counted: new Set() };
             }
             
-            // Deduplicate by customerNumber + product
             const dedupKey = `${form.customerNumber}__${productName.toLowerCase().trim()}`;
             if (!pointsByFSE[fseName].counted.has(dedupKey)) {
               pointsByFSE[fseName].counted.add(dedupKey);
@@ -170,13 +248,12 @@ export default function Dashboard() {
           }
         });
         
-        // Convert to simple object with just totals
         const finalPoints = {};
         Object.keys(pointsByFSE).forEach(name => {
           finalPoints[name] = Math.round(pointsByFSE[name].total * 10) / 10;
         });
-
-        // Fetch pointsAdjustment for all FSEs and add to verified points
+        
+        // Fetch pointsAdjustment
         try {
           const adjRes = await fetch(`${API_BASE}/api/forms/admin/employee-points`, {
             headers: { Authorization: 'Bearer ' + token }
@@ -185,19 +262,24 @@ export default function Dashboard() {
             const adjData = await adjRes.json();
             adjData.forEach(emp => {
               const name = emp.newJoinerName;
-              const adj  = emp.pointsAdjustment || 0;
+              const adj = emp.pointsAdjustment || 0;
               if (adj !== 0) {
                 finalPoints[name] = Math.round(((finalPoints[name] || 0) + adj) * 10) / 10;
               }
             });
           }
         } catch { /* ignore */ }
-
+        
         setFsePoints(finalPoints);
-        setVerificationStats({ fullyVerified, partiallyDone, notFound });
+        setIsLoadingVerification(false);
       })
-      .catch(console.error);
-  }, [teamForms, token]);
+      .catch(error => {
+        console.error('Failed to fetch verification:', error);
+        setVerificationStats({ fullyVerified: 0, partiallyDone: 0, notFound: 0 });
+        setVerificationMap({});
+        setIsLoadingVerification(false);
+      });
+  }, [activeTab, teamForms, myForms, dateFilter, fromDate, toDate, selYear, selMonth, selProduct, token]);
 
   // Fetch verification data when FSE modal opens
   useEffect(() => {
@@ -208,7 +290,7 @@ export default function Dashboard() {
     // Use bulk-admin API (same as admin panel) for consistent results
     const phones   = selectedFSE.forms.map(f => f.customerNumber).join(',');
     const names    = selectedFSE.forms.map(f => encodeURIComponent(f.customerName || '')).join(',');
-    const products = selectedFSE.forms.map(f => encodeURIComponent((f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim())).join(',');
+    const products = selectedFSE.forms.map(f => encodeURIComponent(getFormProduct(f))).join(',');
     const months   = selectedFSE.forms.map(f => encodeURIComponent(new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' }))).join(',');
     
     fetch(`${API_BASE}/api/verify/bulk-admin?phones=${encodeURIComponent(phones)}&names=${names}&products=${products}&months=${months}&_t=${Date.now()}`, {
@@ -222,8 +304,7 @@ export default function Dashboard() {
       .then(verifyMap => {
         const map = {};
         selectedFSE.forms.forEach(form => {
-          const product = (form.formFillingFor || form.tideProduct || form.brand || '').toLowerCase().trim();
-          const vKey = product ? `${form.customerNumber}__${product}` : form.customerNumber;
+          const vKey = getVerificationKey(form); // Use helper function
           const verification = verifyMap[vKey];
           if (verification) {
             map[form._id] = { verification, phoneCheck: {} };
@@ -256,12 +337,11 @@ export default function Dashboard() {
   const modalTitles = { total: '👥 All FSEs', working: '✅ Working FSEs', left: '❌ Left / Not Working FSEs' };
 
   const handleVerificationClick = (status) => {
-    // Calculate product-wise breakdown for the selected status
+    // Calculate product-wise breakdown for the selected status using activeForms
     const productCounts = {};
     
-    teamForms.forEach(form => {
-      const product = (form.formFillingFor || form.tideProduct || form.brand || '').toLowerCase().trim();
-      const vKey = product ? `${form.customerNumber}__${product}` : form.customerNumber;
+    activeForms.forEach(form => {
+      const vKey = getVerificationKey(form); // Use helper function
       const verification = verificationMap[vKey];
       
       const vStatus = verification ? verification.status : 'Not Found';
@@ -276,13 +356,12 @@ export default function Dashboard() {
   };
 
   const handleProductClick = (product) => {
-    // Get all forms for this product with the selected verification status
-    const forms = teamForms.filter(form => {
+    // Get all forms for this product with the selected verification status using activeForms
+    const forms = activeForms.filter(form => {
       const formProduct = form.formFillingFor || (form.brand === 'Tide' && form.tideProduct ? form.tideProduct : form.brand) || 'Unknown';
       if (formProduct !== product) return false;
       
-      const productKey = (form.formFillingFor || form.tideProduct || form.brand || '').toLowerCase().trim();
-      const vKey = productKey ? `${form.customerNumber}__${productKey}` : form.customerNumber;
+      const vKey = getVerificationKey(form); // Use helper function
       const verification = verificationMap[vKey];
       const vStatus = verification ? verification.status : 'Not Found';
       
@@ -301,7 +380,7 @@ export default function Dashboard() {
       const checkData = await checkResponse.json();
 
       // Fetch fresh verification details with full checks data
-      const product = (form.formFillingFor || form.tideProduct || form.brand || '').toLowerCase().trim();
+      const product = getFormProduct(form); // Use helper function
       const month = new Date(form.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' });
       
       const response = await fetch(
@@ -309,7 +388,7 @@ export default function Dashboard() {
         { headers: { Authorization: 'Bearer ' + token } }
       );
       const verifyMap = await response.json();
-      const vKey = product ? `${form.customerNumber}__${product}` : form.customerNumber;
+      const vKey = getVerificationKey(form); // Use helper function
       const verification = verifyMap[vKey];
       
       setTaskModal({ 
@@ -322,7 +401,7 @@ export default function Dashboard() {
     } catch (err) {
       console.error('Failed to check existing task:', err);
       // If check fails, proceed without existing task info
-      const product = (form.formFillingFor || form.tideProduct || form.brand || '').toLowerCase().trim();
+      const product = getFormProduct(form); // Use helper function
       const month = new Date(form.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' });
       
       try {
@@ -331,7 +410,7 @@ export default function Dashboard() {
           { headers: { Authorization: 'Bearer ' + token } }
         );
         const verifyMap = await response.json();
-        const vKey = product ? `${form.customerNumber}__${product}` : form.customerNumber;
+        const vKey = getVerificationKey(form); // Use helper function
         const verification = verifyMap[vKey];
         
         setTaskModal({ form, verification, existingTask: null, canSendReminder: false, daysSinceCreated: 0 });
@@ -452,24 +531,6 @@ export default function Dashboard() {
     return list;
   })();
 
-  // Recalculate verification stats based on activeForms + existing verificationMap
-  const activeVerificationStats = (() => {
-    let fv = 0, pd = 0, nf = 0;
-    activeForms.forEach(form => {
-      const product = (form.formFillingFor || form.tideProduct || form.brand || '').toLowerCase().trim();
-      const vKey = product ? `${form.customerNumber}__${product}` : form.customerNumber;
-      const verification = verificationMap[vKey];
-      if (verification) {
-        if (verification.status === 'Fully Verified') fv++;
-        else if (verification.status === 'Partially Done') pd++;
-        else nf++;
-      } else {
-        nf++;
-      }
-    });
-    return { fullyVerified: fv, partiallyDone: pd, notFound: nf };
-  })();
-
   return (
     <>
       <Navbar tl={tl} notificationCount={taskNotificationCount} />
@@ -543,18 +604,24 @@ export default function Dashboard() {
             </div>
           ))}
           {/* Verification Status KPIs */}
-          {[
-            { label: 'Fully Verified', value: activeVerificationStats.fullyVerified, icon: '✓', color: '#2e7d32', status: 'Fully Verified' },
-            { label: 'Partial',        value: activeVerificationStats.partiallyDone, icon: '◑', color: '#f57f17', status: 'Partially Done' },
-            { label: 'Not Found',      value: activeVerificationStats.notFound,      icon: '–', color: '#888',    status: 'Not Found' },
-          ].map(k => (
-            <div key={k.label} className="kpi-card"
-              style={{ padding: '4px 8px', flex: '1 1 auto', minWidth: 60, borderTop: `3px solid ${k.color}`, cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 1 }}
-              onClick={() => handleVerificationClick(k.status)}>
-              <div style={{ fontSize: 7, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-light)', lineHeight: 1.2 }}>{k.icon} {k.label}</div>
-              <div style={{ fontSize: 14, fontWeight: 800, color: k.color, lineHeight: 1 }}>{k.value}</div>
+          {isLoadingVerification ? (
+            <div style={{ padding: '12px', flex: '1 1 auto', minWidth: 180, textAlign: 'center', color: 'var(--text-light)', fontSize: 11 }}>
+              Loading verification...
             </div>
-          ))}
+          ) : (
+            [
+              { label: 'Fully Verified', value: verificationStats.fullyVerified, icon: '✓', color: '#2e7d32', status: 'Fully Verified' },
+              { label: 'Partial',        value: verificationStats.partiallyDone, icon: '◑', color: '#f57f17', status: 'Partially Done' },
+              { label: 'Not Found',      value: verificationStats.notFound,      icon: '–', color: '#888',    status: 'Not Found' },
+            ].map(k => (
+              <div key={k.label} className="kpi-card"
+                style={{ padding: '4px 8px', flex: '1 1 auto', minWidth: 60, borderTop: `3px solid ${k.color}`, cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 1 }}
+                onClick={() => handleVerificationClick(k.status)}>
+                <div style={{ fontSize: 7, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-light)', lineHeight: 1.2 }}>{k.icon} {k.label}</div>
+                <div style={{ fontSize: 14, fontWeight: 800, color: k.color, lineHeight: 1 }}>{k.value}</div>
+              </div>
+            ))
+          )}
         </div>
 
         {/* Merchant Forms Section */}
@@ -562,10 +629,10 @@ export default function Dashboard() {
           <div className="section-title" style={{ margin: 0 }}>Merchant Visit Forms</div>
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={() => setActiveTab('team')} style={{ padding: '6px 16px', borderRadius: 20, border: '1.5px solid', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: activeTab === 'team' ? 'var(--green-dark)' : '#fff', color: activeTab === 'team' ? '#fff' : 'var(--green-dark)', borderColor: 'var(--green-dark)' }}>
-              Team Forms ({teamForms.length})
+              Team Forms ({activeTab === 'team' ? activeForms.length : teamForms.length})
             </button>
             <button onClick={() => setActiveTab('my')} style={{ padding: '6px 16px', borderRadius: 20, border: '1.5px solid', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: activeTab === 'my' ? 'var(--green-dark)' : '#fff', color: activeTab === 'my' ? '#fff' : 'var(--green-dark)', borderColor: 'var(--green-dark)' }}>
-              My Forms ({myForms.length})
+              My Forms ({activeTab === 'my' ? activeForms.length : myForms.length})
             </button>
           </div>
         </div>
@@ -610,23 +677,35 @@ export default function Dashboard() {
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12, marginTop: 4, alignItems: 'center' }}>
           {(() => {
             const products = ['Tide', 'Tide Insurance', 'Tide MSME', 'Tide Credit Card'];
-            const allList = activeTab === 'my' ? myForms : teamForms;
+            let allList = activeTab === 'my' ? myForms : teamForms;
+            
+            // Apply ALL filters (date, month, year) to match activeForms logic
+            const now = new Date();
+            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            
+            if (dateFilter === 'today') allList = allList.filter(f => new Date(f.createdAt) >= today);
+            else if (dateFilter === 'week') {
+              const ws = new Date(today); ws.setDate(today.getDate() - today.getDay());
+              allList = allList.filter(f => new Date(f.createdAt) >= ws);
+            } else if (dateFilter === 'month') {
+              const ms = new Date(now.getFullYear(), now.getMonth(), 1);
+              allList = allList.filter(f => new Date(f.createdAt) >= ms);
+            } else if (dateFilter === 'custom' && (fromDate || toDate)) {
+              allList = allList.filter(f => {
+                const d = new Date(f.createdAt);
+                if (fromDate && d < new Date(fromDate)) return false;
+                if (toDate && d > new Date(toDate + 'T23:59:59')) return false;
+                return true;
+              });
+            }
+            
+            if (selYear) allList = allList.filter(f => new Date(f.createdAt).getFullYear() === parseInt(selYear));
+            if (selMonth !== '') allList = allList.filter(f => new Date(f.createdAt).getMonth() === parseInt(selMonth));
+            
             const counts = {};
             products.forEach(p => {
               const sp = p.toLowerCase().trim();
               counts[p] = allList.filter(f => {
-                // Filter by Month dropdown (selMonth) if selected
-                if (selMonth !== '') {
-                  const formDate = new Date(f.createdAt);
-                  if (formDate.getMonth() !== parseInt(selMonth)) return false;
-                }
-                
-                // Filter by Year dropdown (selYear) if selected
-                if (selYear) {
-                  const formDate = new Date(f.createdAt);
-                  if (formDate.getFullYear() !== parseInt(selYear)) return false;
-                }
-                
                 const p1 = (f.formFillingFor || '').toLowerCase().trim();
                 const p2 = (f.tideProduct || '').toLowerCase().trim();
                 const p3 = (f.brand || '').toLowerCase().trim();
@@ -646,8 +725,7 @@ export default function Dashboard() {
                 if (!match) return false;
                 
                 // Check verification status
-                const fp = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
-                const vKey = fp ? `${f.customerNumber}__${fp}` : f.customerNumber;
+                const vKey = getVerificationKey(f); // Use helper function
                 const verification = verificationMap[vKey];
                 
                 return verification?.status === 'Fully Verified';
@@ -937,7 +1015,7 @@ export default function Dashboard() {
                     
                     const phones   = selectedFSE.forms.map(f => f.customerNumber).join(',');
                     const names    = selectedFSE.forms.map(f => encodeURIComponent(f.customerName || '')).join(',');
-                    const products = selectedFSE.forms.map(f => encodeURIComponent((f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim())).join(',');
+                    const products = selectedFSE.forms.map(f => encodeURIComponent(getFormProduct(f))).join(',');
                     const months   = selectedFSE.forms.map(f => encodeURIComponent(new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' }))).join(',');
                     
                     fetch(`${API_BASE}/api/verify/bulk-admin?phones=${encodeURIComponent(phones)}&names=${names}&products=${products}&months=${months}&_t=${Date.now()}`, {
@@ -951,8 +1029,7 @@ export default function Dashboard() {
                       .then(verifyMap => {
                         const map = {};
                         selectedFSE.forms.forEach(form => {
-                          const product = (form.formFillingFor || form.tideProduct || form.brand || '').toLowerCase().trim();
-                          const vKey = product ? `${form.customerNumber}__${product}` : form.customerNumber;
+                          const vKey = getVerificationKey(form); // Use helper function
                           const verification = verifyMap[vKey];
                           if (verification) {
                             map[form._id] = { verification, phoneCheck: {} };
