@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { API_BASE } from '../api';
+import MeetingsModal from './MeetingsModal';
 
 function TLNotificationPanel({ token, onClose }) {
   const [notifications, setNotifications] = useState([]);
@@ -130,7 +131,9 @@ function TLNotificationPanel({ token, onClose }) {
 export default function Navbar({ tl, notificationCount, onNotificationClick }) {
   const [open, setOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [meetingsOpen, setMeetingsOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [meetingCount, setMeetingCount] = useState(0);
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [showInstallButton, setShowInstallButton] = useState(false);
   const ref = useRef();
@@ -185,11 +188,29 @@ export default function Navbar({ tl, notificationCount, onNotificationClick }) {
       .catch(() => {});
   }, [token]);
 
+  const refreshMeetingCount = useCallback(() => {
+    if (!token || !tl?.email) return;
+    fetch(`${API_BASE}/api/meetings/my-meetings?email=${encodeURIComponent(tl.email)}`, {
+      headers: { Authorization: 'Bearer ' + token }
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success && data.unreadCount !== undefined) {
+          setMeetingCount(data.unreadCount);
+        }
+      })
+      .catch(() => {});
+  }, [token, tl?.email]);
+
   useEffect(() => {
     refreshCount();
-    const interval = setInterval(refreshCount, 15000);
+    refreshMeetingCount();
+    const interval = setInterval(() => {
+      refreshCount();
+      refreshMeetingCount();
+    }, 15000);
     return () => clearInterval(interval);
-  }, [refreshCount]);
+  }, [refreshCount, refreshMeetingCount]);
 
   useEffect(() => {
     const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
@@ -276,6 +297,33 @@ export default function Navbar({ tl, notificationCount, onNotificationClick }) {
           )}
         </div>
 
+        {/* 🎥 Meetings Bell */}
+        <div
+          onClick={() => setMeetingsOpen(true)}
+          style={{
+            position: 'relative', marginRight: 8, cursor: 'pointer',
+            width: 40, height: 40, borderRadius: '50%',
+            background: meetingCount > 0 ? '#2e7d32' : 'rgba(46,125,50,0.08)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            border: meetingCount > 0 ? '2px solid #66bb6a' : '2px solid transparent',
+            transition: 'all 0.2s',
+          }}
+          onMouseEnter={e => e.currentTarget.style.background = '#2e7d32'}
+          onMouseLeave={e => e.currentTarget.style.background = meetingCount > 0 ? '#2e7d32' : 'rgba(46,125,50,0.08)'}
+        >
+          <span style={{ fontSize: 18 }}>🎥</span>
+          {meetingCount > 0 && (
+            <span style={{
+              position: 'absolute', top: -4, right: -4,
+              background: '#ff9800', color: '#fff', borderRadius: '50%',
+              width: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 10, fontWeight: 800, border: '2px solid #fff',
+            }}>
+              {meetingCount > 9 ? '9+' : meetingCount}
+            </span>
+          )}
+        </div>
+
         {/* 🔔 Points Update Notification Bell */}
         <div
           onClick={() => setNotifOpen(true)}
@@ -335,6 +383,14 @@ export default function Navbar({ tl, notificationCount, onNotificationClick }) {
       <TLNotificationPanel
         token={token}
         onClose={() => { setNotifOpen(false); refreshCount(); }}
+      />
+    )}
+    {meetingsOpen && (
+      <MeetingsModal
+        isOpen={meetingsOpen}
+        onClose={() => { setMeetingsOpen(false); refreshMeetingCount(); }}
+        userEmail={tl?.email}
+        token={token}
       />
     )}
     </>
