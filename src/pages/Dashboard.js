@@ -17,14 +17,6 @@ const STATUS_COLOR = {
   'Need to visit again':           { color: '#1565c0', bg: '#e3f2fd' },
 };
 
-const POINTS_MAP = { 
-  'Tide': 2, 
-  'Tide MSME': 0.3,
-  'Tide Insurance': 1, 
-  'Tide Credit Card': 1,
-  'Tide BT': 1,
-};
-
 const normalizeProduct = (product) => {
   const p = (product || '').toLowerCase().trim();
   if (p === 'tide insurance' || p === 'insurance') return 'Tide Insurance';
@@ -43,7 +35,8 @@ const getFormProduct = (form) => {
 // 🔧 Helper function to generate verification key consistently
 const getVerificationKey = (form) => {
   const product = getFormProduct(form);
-  return product ? `${form.customerNumber}__${product}` : form.customerNumber;
+  const month = form.createdAt ? new Date(form.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' }) : '';
+  return product ? `${form.customerNumber}__${product}__${month}` : `${form.customerNumber}__${month}`;
 };
 
 export default function Dashboard() {
@@ -234,7 +227,7 @@ export default function Dashboard() {
           
           if (verification && verification.status === 'Fully Verified') {
             const productName = form.formFillingFor || (form.brand === 'Tide' && form.tideProduct ? form.tideProduct : form.brand) || '';
-            const points = POINTS_MAP[normalizeProduct(productName)] || 0;
+            const points = verification.points || 0;
             
             if (!pointsByFSE[fseName]) {
               pointsByFSE[fseName] = { total: 0, counted: new Set() };

@@ -4,9 +4,11 @@ import { useNavigate, Link } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 
+/*
 // Updated product list per new form format
 const PRODUCTS = ['Tide','Insurance 2W-4W','PineLab','Tide Insurance','Tide MSME','Tide Credit Card'];
 const BRAND_NAMES = ['Tide','Insurance 2W-4W','PineLab'];
+*/
 
 function FormCard({ icon, title, sub, children }) {
   return (
@@ -66,6 +68,22 @@ export default function MerchantForm() {
   const [loading,  setLoading]  = useState(false);
   const [dupModal, setDupModal] = useState(null);
 
+  // Dynamic Form State
+  const [formConfig, setFormConfig] = useState(null);
+  const [dynamicData, setDynamicData] = useState({});
+
+  // Fetch Form Config
+  useEffect(() => {
+    fetch(`${API_BASE}/api/form-config`)
+      .then(r => r.json())
+      .then(setFormConfig)
+      .catch(console.error);
+  }, []);
+
+  const handleDynamicChange = (key, value) => {
+    setDynamicData(prev => ({ ...prev, [key]: value }));
+  };
+
   useEffect(() => {
     fetch(`${API_BASE}/api/tl/profile`, { headers: { Authorization: 'Bearer ' + token } })
       .then(r => r.json()).then(setTl).catch(console.error);
@@ -87,15 +105,7 @@ export default function MerchantForm() {
       customerName, customerNumber, location, status,
       ...(isOnboarding && product ? { formFillingFor: product } : {}),
       attemptedProducts: isOnboarding ? [] : brandNames,
-      tide_qrPosted:     tideQR,
-      tide_upiTxnDone:   tideUPI,
-      tideBt_txnDone:    tideBtTxn,
-      ins_vehicleNumber: insVehicleNo,
-      ins_vehicleType:   insVehicle,
-      ins_insuranceType: insType,
-      pine_cardTxn:      pineCard,
-      pine_wifiConnected: pineWifi,
-      tideIns_type:      tideInsType,
+      ...(isOnboarding ? dynamicData : {})
     };
 
     setLoading(true);
@@ -163,17 +173,17 @@ export default function MerchantForm() {
           </FormCard>
 
           {/* Section 2 — Brand Name (shown when NOT onboarding) */}
-          {status && !isOnboarding && (
+          {status && !isOnboarding && formConfig && (
             <FormCard icon="🏷️" title="Brand Name" sub="Select the company/brand discussed">
               <div className="form-group">
                 <label>Name of the company</label>
                 <div className="checkbox-group">
-                  {BRAND_NAMES.map(b => (
-                    <label key={b} className="checkbox-option"
-                      style={brandNames.includes(b) ? { borderColor: 'var(--green-dark)', background: 'var(--green-pale)', color: 'var(--green-dark)', fontWeight: 600 } : {}}>
-                      <input type="checkbox" checked={brandNames.includes(b)} onChange={() => toggleBrand(b)}
+                  {formConfig.brands.map(b => (
+                    <label key={b.name} className="checkbox-option"
+                      style={brandNames.includes(b.name) ? { borderColor: 'var(--green-dark)', background: 'var(--green-pale)', color: 'var(--green-dark)', fontWeight: 600 } : {}}>
+                      <input type="checkbox" checked={brandNames.includes(b.name)} onChange={() => toggleBrand(b.name)}
                         style={{ accentColor: 'var(--green-dark)', width: 16, height: 16, flexShrink: 0 }} />
-                      {b}
+                      {b.name}
                     </label>
                   ))}
                 </div>
@@ -182,8 +192,76 @@ export default function MerchantForm() {
           )}
 
           {/* Section 3 — Onboarding Details */}
-          {isOnboarding && (
+          {isOnboarding && formConfig && (
             <FormCard icon="📄" title="Onboarding Details" sub="Select the Option">
+              <div className="form-group">
+                <label>Form Filling For (Brand) <span className="req">*</span></label>
+                <div className="radio-group" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+                  {formConfig.brands.map(b => (
+                    <label key={b.name} className="radio-option" style={product === b.name ? { borderColor: 'var(--green-dark)', background: 'var(--green-pale)', color: 'var(--green-dark)' } : {}}>
+                      <input type="radio" name="product" value={b.name} checked={product === b.name} onChange={() => { setProduct(b.name); setDynamicData({}); }}
+                        style={{ accentColor: 'var(--green-dark)', width: 16, height: 16 }} />
+                      {b.name}
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* Dynamic sub-products and fields */}
+              {(() => {
+                const selectedBrand = formConfig.brands.find(b => b.name === product);
+                if (!selectedBrand) return null;
+
+                // For TL app, it uses "formFillingFor: product" and if there are sub-products, we might need a subProduct field.
+                // But previously, PRODUCTS array contained subproducts directly.
+                // So if we choose Tide, maybe we need another field for subproduct.
+                return (
+                  <>
+                    {selectedBrand.hasSubProducts && (
+                      <div className="form-group">
+                        <label>Sub-Product <span className="req">*</span></label>
+                        <RadioGroup 
+                          name="subProduct" 
+                          options={selectedBrand.products.map(p => p.name)} 
+                          value={dynamicData.subProduct || ''} 
+                          onChange={(val) => { handleDynamicChange('subProduct', val); }} 
+                        />
+                      </div>
+                    )}
+
+                    {/* Render Fields */}
+                    {(() => {
+                      const fields = selectedBrand.hasSubProducts 
+                        ? selectedBrand.products.find(p => p.name === dynamicData.subProduct)?.fields || []
+                        : selectedBrand.fields || [];
+
+                      return fields.map((f, i) => (
+                        <div key={i} className="form-group">
+                          <label>{f.label}</label>
+                          {f.type === 'radio' ? (
+                            <RadioGroup 
+                              name={f.name} 
+                              options={f.options || ['Yes', 'No']} 
+                              value={dynamicData[f.name] || ''} 
+                              onChange={(val) => handleDynamicChange(f.name, val)} 
+                            />
+                          ) : (
+                            <input 
+                              type="text" 
+                              value={dynamicData[f.name] || ''} 
+                              onChange={e => handleDynamicChange(f.name, e.target.value)} 
+                              placeholder={`Enter ${f.label.toLowerCase()}`} 
+                              style={{ width: '100%', padding: '11px 14px', border: '1.5px solid #dde8dd', borderRadius: 8, fontSize: 14 }} 
+                            />
+                          )}
+                        </div>
+                      ));
+                    })()}
+                  </>
+                );
+              })()}
+
+              {/* --- Old Hardcoded form (commented out for testing) ---
               <div className="form-group">
                 <label>Form Filling For <span className="req">*</span></label>
                 <div className="radio-group" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
@@ -197,34 +275,30 @@ export default function MerchantForm() {
                 </div>
               </div>
 
-              {/* Tide */}
               {product === 'Tide' && (<>
                 <div className="form-group"><label>QR Posted <span className="req">*</span></label><RadioGroup name="tide_qr" options={['Yes','No']} value={tideQR} onChange={setTideQR} /></div>
                 <div className="form-group"><label>Rs 10/30 UPI Txn Done <span className="req">*</span></label><RadioGroup name="tide_upi" options={['Yes','No']} value={tideUPI} onChange={setTideUPI} /></div>
               </>)}
 
-              {/* Tide-BT */}
               {product === 'Tide-BT' && (
                 <div className="form-group"><label>Rs 10 Txn Done <span className="req">*</span></label><RadioGroup name="tidebt_txn" options={['Yes','No']} value={tideBtTxn} onChange={setTideBtTxn} /></div>
               )}
 
-              {/* Insurance 2W-4W */}
               {product === 'Insurance 2W-4W' && (<>
                 <div className="form-group"><label>Vehicle Number <span className="req">*</span></label><input type="text" value={insVehicleNo} onChange={e => setInsVehicleNo(e.target.value)} placeholder="e.g. MH12AB1234" style={{ width: '100%', padding: '11px 14px', border: '1.5px solid #dde8dd', borderRadius: 8, fontSize: 14, background: '#fafcfa', outline: 'none' }} /></div>
                 <div className="form-group"><label>Vehicle Type <span className="req">*</span></label><RadioGroup name="ins_vehicle" options={['2 Wheeler','4 Wheeler','Commercial']} value={insVehicle} onChange={setInsVehicle} /></div>
                 <div className="form-group"><label>Insurance Type <span className="req">*</span></label><RadioGroup name="ins_type" options={['3rd Party','Only OD','OD + 3rd Party']} value={insType} onChange={setInsType} /></div>
               </>)}
 
-              {/* PineLab */}
               {product === 'PineLab' && (<>
                 <div className="form-group"><label>1 Card Txn done of Rs 100 <span className="req">*</span></label><RadioGroup name="pine_card" options={['Yes','No']} value={pineCard} onChange={setPineCard} /></div>
                 <div className="form-group"><label>Machine connected with Wi-Fi <span className="req">*</span></label><RadioGroup name="pine_wifi" options={['Yes','No']} value={pineWifi} onChange={setPineWifi} /></div>
               </>)}
 
-              {/* Tide Insurance */}
               {product === 'Tide Insurance' && (
                 <div className="form-group"><label>Type of Insurance <span className="req">*</span></label><RadioGroup name="tideins" options={['Cyber Security','Accidental']} value={tideInsType} onChange={setTideInsType} /></div>
               )}
+              --- */}
 
             </FormCard>
           )}
