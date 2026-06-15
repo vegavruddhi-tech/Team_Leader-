@@ -4,6 +4,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 import TideMerchantTimeline from '../components/TideMerchantTimeline';
+import { subscribeUserToPush } from '../pushSubscriptionHelper';
 
 // 🔧 VERIFICATION KEY CONSISTENCY FIX:
 // Helper functions ensure consistent product extraction and key generation
@@ -73,6 +74,13 @@ export default function Dashboard() {
       .then(r => { if (r.status === 401) { localStorage.clear(); navigate('/'); } return r.json(); })
       .then(setTl).catch(console.error);
   }, [token, navigate]);
+
+  // Subscribe to push notifications when profile is loaded
+  useEffect(() => {
+    if (token && tl) {
+      subscribeUserToPush(API_BASE, token);
+    }
+  }, [token, tl]);
 
   const loadStats = useCallback(() => {
     fetch(`${API_BASE}/api/tl/stats`, { headers: { Authorization: 'Bearer ' + token } })

@@ -7,3 +7,4 @@ PWA_*.md
 QUICK_START_PWA.md
 README_PWA.md
 public/ICON_INSTRUCTIONS.md
+.env.production
