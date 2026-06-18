@@ -10,6 +10,7 @@ import MerchantDetail from './pages/MerchantDetail';
 import Tasks from './pages/Tasks';
 import MySalary from './pages/MySalary';
 import InstallPWA from './components/InstallPWA';
+import PullToRefresh from './components/PullToRefresh';
 
 function PrivateRoute({ children }) {
   return localStorage.getItem('token') ? children : <Navigate to="/" replace />;
@@ -17,20 +18,22 @@ function PrivateRoute({ children }) {
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <InstallPWA />
-      <Routes>
-        <Route path="/"              element={<Login />} />
-        <Route path="/register"      element={<Register />} />
-        <Route path="/dashboard"     element={<PrivateRoute><Dashboard /></PrivateRoute>} />
-        <Route path="/profile"       element={<PrivateRoute><Profile /></PrivateRoute>} />
-        <Route path="/my-team"       element={<PrivateRoute><MyTeam /></PrivateRoute>} />
-        <Route path="/my-salary"     element={<PrivateRoute><MySalary /></PrivateRoute>} />
-        <Route path="/merchant-form" element={<PrivateRoute><MerchantForm /></PrivateRoute>} />
-        <Route path="/merchant/:id"  element={<PrivateRoute><MerchantDetail /></PrivateRoute>} />
-        <Route path="/tasks"         element={<PrivateRoute><Tasks /></PrivateRoute>} />
-        <Route path="*"              element={<Navigate to="/" replace />} />
-      </Routes>
-    </BrowserRouter>
+    <PullToRefresh onRefresh={() => window.location.reload(true)}>
+      <BrowserRouter>
+        <InstallPWA />
+        <Routes>
+          <Route path="/"              element={<Login />} />
+          <Route path="/register"      element={<Register />} />
+          <Route path="/dashboard"     element={<PrivateRoute><Dashboard /></PrivateRoute>} />
+          <Route path="/profile"       element={<PrivateRoute><Profile /></PrivateRoute>} />
+          <Route path="/my-team"       element={<PrivateRoute><MyTeam /></PrivateRoute>} />
+          <Route path="/my-salary"     element={<PrivateRoute><MySalary /></PrivateRoute>} />
+          <Route path="/merchant-form" element={<PrivateRoute><MerchantForm /></PrivateRoute>} />
+          <Route path="/merchant/:id"  element={<PrivateRoute><MerchantDetail /></PrivateRoute>} />
+          <Route path="/tasks"         element={<PrivateRoute><Tasks /></PrivateRoute>} />
+          <Route path="*"              element={<Navigate to="/" replace />} />
+        </Routes>
+      </BrowserRouter>
+    </PullToRefresh>
   );
 }
