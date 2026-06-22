@@ -11,9 +11,21 @@ export default function Login() {
   const [error,   setError]   = useState('');
   const [isWarn,  setIsWarn]  = useState(false);
   const [showTidePopup, setShowTidePopup] = useState(false);
+  const [gsiReady, setGsiReady] = useState(!!window.google);
 
   useEffect(() => {
     if (localStorage.getItem('token')) navigate('/dashboard');
+    
+    // Wait for Google GSI script to load
+    if (!window.google) {
+      const interval = setInterval(() => {
+        if (window.google) {
+          setGsiReady(true);
+          clearInterval(interval);
+        }
+      }, 200);
+      return () => clearInterval(interval);
+    }
   }, [navigate]);
 
   const handleSignIn = () => {
@@ -102,7 +114,8 @@ export default function Login() {
     setShowTidePopup(false);
     // Redirect to Tide BT TL dashboard with token in URL
     const token = localStorage.getItem('token');
-    window.location.href = `http://localhost:3005?token=${encodeURIComponent(token)}`;
+    const tideBTUrl = process.env.REACT_APP_TIDEBT_URL || 'http://localhost:3005';
+    window.location.href = `${tideBTUrl}?token=${encodeURIComponent(token)}`;
   };
 
   return (
@@ -135,7 +148,7 @@ export default function Login() {
             <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
             <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.35-8.16 2.35-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
           </svg>
-          {loading ? 'Signing in…' : 'Sign in with Google'}
+          {loading ? 'Signing in…' : !gsiReady ? 'Loading Google…' : 'Sign in with Google'}
         </button>
 
         <div style={{ marginTop: 16, padding: '12px 14px', background: 'var(--green-pale)', borderRadius: 8, borderLeft: '3px solid var(--green-light)' }}>
