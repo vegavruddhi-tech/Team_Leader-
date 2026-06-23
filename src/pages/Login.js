@@ -114,7 +114,7 @@ export default function Login() {
     setShowTidePopup(false);
     // Redirect to Tide BT TL dashboard with token in URL
     const token = localStorage.getItem('token');
-    window.location.href = `http://localhost:3005?token=${encodeURIComponent(token)}`;
+    window.location.href = `https://vegavruddhi-tl-tide-bt.vercel.app?token=${encodeURIComponent(token)}`;
   };
 
   return (
