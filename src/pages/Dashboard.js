@@ -771,8 +771,9 @@ export default function Dashboard() {
                   <div className="mr-info" style={{ flex: 1 }}>
                     <div className="mr-name">{form.customerName}</div>
                     <div className="mr-meta">
-                      <span>📞 {form.customerNumber}</span>
                       <span>📍 {form.location}</span>
+                      <span>📄 {getFormProduct(form) || '–'}</span>
+                      <span>📞 {form.customerNumber}</span>
                     </div>
                   </div>
                   <div className="mr-right">

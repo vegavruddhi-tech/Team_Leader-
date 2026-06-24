@@ -101,9 +101,15 @@ export default function MerchantForm() {
     if (!status) { setError('Please select a visit status.'); return; }
     if (isOnboarding && !product) { setError('Please select a product for onboarding.'); return; }
 
+    const isTide = product === 'Tide';
+    const subProduct = dynamicData.subProduct;
+
     const payload = {
       customerName, customerNumber, location, status,
-      ...(isOnboarding && product ? { formFillingFor: product } : {}),
+      ...(isOnboarding && product ? { formFillingFor: isTide && subProduct ? subProduct : product } : {}),
+      ...(isOnboarding && isTide && subProduct ? { tideProduct: subProduct } : {}),
+      ...(isOnboarding && product === 'Insurance 2W-4W' && subProduct ? { ins_insuranceType: subProduct } : {}),
+      ...(isOnboarding && product === 'Tide Insurance' && subProduct ? { tideIns_type: subProduct } : {}),
       attemptedProducts: isOnboarding ? [] : brandNames,
       ...(isOnboarding ? dynamicData : {})
     };
