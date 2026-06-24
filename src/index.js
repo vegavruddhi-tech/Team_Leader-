@@ -27,14 +27,8 @@ if ('serviceWorker' in navigator) {
         registration.addEventListener('updatefound', () => {
           const newWorker = registration.installing;
           newWorker.addEventListener('statechange', () => {
-            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-              console.log('🔄 New version available! Refresh to update.');
-              // Avoid confirm reload loops on localhost during development
-              if (window.location.hostname !== 'localhost') {
-                if (window.confirm('New version available! Refresh to update?')) {
-                  window.location.reload();
-                }
-              }
+              console.log('🔄 New version activated! Reloading page...');
+              window.location.reload();
             }
           });
         });

@@ -1,9 +1,10 @@
-const CACHE_NAME = 'vegavruddhi-tl-v1.0.0';
+// Cache version — update this string on every deploy to force cache refresh
+const CACHE_NAME = 'vegavruddhi-tl-v' + (self.__WB_MANIFEST ? self.__WB_MANIFEST : Date.now());
+const STATIC_CACHE = 'vegavruddhi-tl-static-v1.0.5';
+
 const urlsToCache = [
   '/',
   '/index.html',
-  '/static/css/main.css',
-  '/static/js/main.js',
   '/manifest.json',
   '/favicon.ico'
 ];
@@ -12,7 +13,7 @@ const urlsToCache = [
 self.addEventListener('install', (event) => {
   console.log('[Service Worker] Installing...');
   event.waitUntil(
-    caches.open(CACHE_NAME)
+    caches.open(STATIC_CACHE)
       .then((cache) => {
         console.log('[Service Worker] Caching app shell');
         return cache.addAll(urlsToCache);
@@ -21,49 +22,72 @@ self.addEventListener('install', (event) => {
         console.error('[Service Worker] Cache failed:', error);
       })
   );
+  // Force the new service worker to take over immediately
   self.skipWaiting();
 });
 
-// Fetch event - serve from cache, fallback to network
+// Fetch event
 self.addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url);
+
+  // ✅ NEVER cache API calls — always go to network
+  if (
+    url.pathname.startsWith('/api/') ||
+    url.hostname !== self.location.hostname
+  ) {
+    event.respondWith(fetch(event.request));
+    return;
+  }
+
+  // ✅ For JS/CSS bundles — network first, then cache (so new deploys always load fresh)
+  if (
+    url.pathname.startsWith('/static/js/') ||
+    url.pathname.startsWith('/static/css/')
+  ) {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response && response.status === 200) {
+            const responseToCache = response.clone();
+            caches.open(STATIC_CACHE).then((cache) => {
+              cache.put(event.request, responseToCache);
+            });
+          }
+          return response;
+        })
+        .catch(() => caches.match(event.request))
+    );
+    return;
+  }
+
+  // For everything else — cache first, fallback to network
   event.respondWith(
     caches.match(event.request)
       .then((response) => {
-        if (response) {
-          return response;
-        }
-
-        const fetchRequest = event.request.clone();
-
-        return fetch(fetchRequest).then((response) => {
-          if (!response || response.status !== 200 || response.type !== 'basic') {
-            return response;
+        if (response) return response;
+        return fetch(event.request).then((networkResponse) => {
+          if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
+            return networkResponse;
           }
-
-          const responseToCache = response.clone();
-
-          caches.open(CACHE_NAME)
-            .then((cache) => {
-              cache.put(event.request, responseToCache);
-            });
-
-          return response;
+          const responseToCache = networkResponse.clone();
+          caches.open(STATIC_CACHE).then((cache) => {
+            cache.put(event.request, responseToCache);
+          });
+          return networkResponse;
         });
       })
-      .catch(() => {
-        return caches.match('/index.html');
-      })
+      .catch(() => caches.match('/index.html'))
   );
 });
 
-// Activate event - clean up old caches
+// Activate event - clean up ALL old caches
 self.addEventListener('activate', (event) => {
   console.log('[Service Worker] Activating...');
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames.map((cacheName) => {
-          if (cacheName !== CACHE_NAME) {
+          if (cacheName !== STATIC_CACHE) {
             console.log('[Service Worker] Deleting old cache:', cacheName);
             return caches.delete(cacheName);
           }
@@ -71,6 +95,7 @@ self.addEventListener('activate', (event) => {
       );
     })
   );
+  // Take control of all open pages immediately
   return self.clients.claim();
 });
 
