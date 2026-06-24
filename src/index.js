@@ -26,11 +26,14 @@ if ('serviceWorker' in navigator) {
 
         registration.addEventListener('updatefound', () => {
           const newWorker = registration.installing;
-          newWorker.addEventListener('statechange', () => {
-              console.log('🔄 New version activated! Reloading page...');
-              window.location.reload();
-            }
-          });
+          if (newWorker) {
+            newWorker.addEventListener('statechange', () => {
+              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                console.log('🔄 New version activated! Reloading page...');
+                window.location.reload();
+              }
+            });
+          }
         });
       })
       .catch((error) => {
