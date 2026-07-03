@@ -40,6 +40,74 @@ const getVerificationKey = (form) => {
   return product ? `${form.customerNumber}__${product}__${month}` : `${form.customerNumber}__${month}`;
 };
 
+function formatProductDisplay(f, info) {
+  const baseProduct = f.formFillingFor
+    || (f.attemptedProducts?.join(', '))
+    || (f.brand && f.tideProduct ? `${f.tideProduct}` : f.brand)
+    || '–';
+
+  if (baseProduct === '–') return baseProduct;
+  if (baseProduct.includes('(')) return baseProduct;
+
+  let subType = '';
+  const productKey = baseProduct.toLowerCase().trim();
+  const cfg = window.dynamicPointsMap?.[productKey];
+
+  if (cfg) {
+    if (cfg.type === 'mapped' && cfg.fieldMapping?.mappedColumn) {
+      const col = cfg.fieldMapping.mappedColumn;
+      let val = String(f[col] || '').trim();
+      if (!val && info?.record) {
+        val = String(info.record[col] || info.record[col.toLowerCase()] || '').trim();
+      }
+      if (!val && info?.checks && Array.isArray(info.checks)) {
+        const match = info.checks.find(c => c.field && c.field.toLowerCase() === col.toLowerCase());
+        if (match?.sheetValue) val = String(match.sheetValue).trim();
+        if (!val) {
+          const broader = info.checks.find(c => c.field && c.field.toLowerCase().includes(col.toLowerCase()));
+          if (broader?.sheetValue) val = String(broader.sheetValue).trim();
+        }
+      }
+      if (!val && info?.points !== undefined && Array.isArray(cfg.valueMapping)) {
+        const mapped = cfg.valueMapping.find(m => Number(m.points) === Number(info.points));
+        if (mapped && mapped.value) val = String(mapped.value).trim();
+      }
+      if (val) {
+        const num = parseFloat(val);
+        subType = !isNaN(num) ? `${num}` : val;
+      }
+    } else if (cfg.type === 'complex' && cfg.fieldMapping) {
+      const planField = cfg.fieldMapping.planField || 'planName';
+      const tierField = cfg.fieldMapping.tierField || 'tierName';
+      const planVal = String(f[planField] || '').trim();
+      const tierVal = String(f[tierField] || '').trim();
+      if (planVal && tierVal) subType = `${planVal} - ${tierVal}`;
+      else if (planVal) subType = planVal;
+      else if (tierVal) subType = tierVal;
+    }
+  }
+
+  // Generic fallback if cfg didn't catch it or wasn't loaded (specifically for Tide Insurance)
+  if (!subType && productKey === 'tide insurance') {
+    let val = String(f.ins_amount || f.tideIns_amount || f.amount || '').trim();
+    if (!val && info?.checks && Array.isArray(info.checks)) {
+      const match = info.checks.find(c => c.field && (c.field.toLowerCase() === 'amount' || c.field.toLowerCase().includes('amount') || c.field.toLowerCase().includes('plan')));
+      if (match?.sheetValue) val = String(match.sheetValue).trim();
+    }
+    if (!val && info?.record) {
+      val = String(info.record.amount || info.record.Amount || '').trim();
+    }
+    if (val) {
+      const num = parseFloat(val);
+      subType = !isNaN(num) ? `${num}` : val;
+    } else if (f.tideIns_type) {
+      subType = f.tideIns_type;
+    }
+  }
+
+  return subType ? `${baseProduct} (${subType})` : baseProduct;
+}
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const token = localStorage.getItem('token');
@@ -81,6 +149,45 @@ export default function Dashboard() {
       subscribeUserToPush(API_BASE, token);
     }
   }, [token, tl]);
+
+  // Load dynamic points map for formatting product badges (e.g. Tide Insurance (699))
+  useEffect(() => {
+    fetch(`${API_BASE}/api/points-config`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data && data.configs) {
+          const map = {};
+          data.configs.forEach(cfg => {
+            const productKey = cfg.productName.toLowerCase().trim();
+            const configData = {
+              type: cfg.productType,
+              fieldMapping: cfg.fieldMapping || {},
+            };
+            if (cfg.productType === 'simple') {
+              configData.points = cfg.simplePoints;
+            } else if (cfg.productType === 'complex') {
+              configData.plans = {};
+              (cfg.plans || []).forEach(plan => {
+                const planKey = plan.planName.toLowerCase();
+                configData.plans[planKey] = {};
+                (plan.tiers || []).forEach(tier => {
+                  const tierKey = tier.name.toLowerCase();
+                  configData.plans[planKey][tierKey] = {
+                    points: tier.points,
+                    price: tier.price
+                  };
+                });
+              });
+            } else if (cfg.productType === 'mapped') {
+              configData.valueMapping = cfg.valueMapping || [];
+            }
+            map[productKey] = configData;
+          });
+          window.dynamicPointsMap = map;
+        }
+      })
+      .catch(console.error);
+  }, []);
 
   const loadStats = useCallback(() => {
     fetch(`${API_BASE}/api/tl/stats`, { headers: { Authorization: 'Bearer ' + token } })
@@ -188,137 +295,169 @@ export default function Dashboard() {
       return;
     }
 
-    setIsLoadingVerification(true);
-    
-    const phones = list.map(f => f.customerNumber).join(',');
-    const names = list.map(f => encodeURIComponent(f.customerName || '')).join(',');
-    const products = list.map(f => encodeURIComponent(getFormProduct(f))).join(',');
-    const months = list.map(f => encodeURIComponent(new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' }))).join(',');
-    
+    // 1️⃣ Build initial map instantly from database fields (0 latency, 0 errors)
+    const initialMap = {};
+    let fullyVerified = 0;
+    let partiallyDone = 0;
+    let notFound = 0;
+    const pointsByFSE = {};
+
+    list.forEach(form => {
+      const vstatus = form.verificationStatus || form.verificationChecks?.status || 'Not Found';
+      const vpoints = form.verificationChecks?.points || 0;
+      const isFound = vstatus !== 'Not Found';
+      const vinfo = {
+        status: vstatus,
+        points: vpoints,
+        phoneMatch: isFound ? true : (form.verificationChecks?.phoneMatch || false),
+        inSheet: isFound ? true : (form.verificationChecks?.inSheet || false),
+        ...form.verificationChecks,
+        status: vstatus
+      };
+      if (isFound) {
+        vinfo.phoneMatch = true;
+        vinfo.inSheet = true;
+      }
+      const vKey = getVerificationKey(form);
+      initialMap[vKey] = vinfo;
+      if (form.customerNumber) initialMap[form.customerNumber] = vinfo;
+
+      if (vstatus === 'Fully Verified') fullyVerified++;
+      else if (vstatus === 'Partially Done') partiallyDone++;
+      else notFound++;
+
+      if (vstatus === 'Fully Verified') {
+        const fseName = form.employeeName || 'Unknown';
+        const productName = form.formFillingFor || (form.brand === 'Tide' && form.tideProduct ? form.tideProduct : form.brand) || '';
+        if (!pointsByFSE[fseName]) {
+          pointsByFSE[fseName] = { total: 0, counted: new Set() };
+        }
+        const dedupKey = `${form.customerNumber}__${productName.toLowerCase().trim()}`;
+        if (!pointsByFSE[fseName].counted.has(dedupKey)) {
+          pointsByFSE[fseName].counted.add(dedupKey);
+          pointsByFSE[fseName].total += vpoints;
+        }
+      }
+    });
+
+    setVerificationStats({ fullyVerified, partiallyDone, notFound });
+    setVerificationMap(initialMap);
+
+    const finalPoints = {};
+    Object.keys(pointsByFSE).forEach(name => {
+      finalPoints[name] = Math.round(pointsByFSE[name].total * 10) / 10;
+    });
+    setFsePoints(finalPoints);
+    setIsLoadingVerification(false);
+
+    // 2️⃣ Background fetch ONLY for unverified forms
+    const unverified = list.filter(f => !f.verificationStatus || f.verificationStatus === 'Not Found').slice(0, 30);
+    if (unverified.length === 0) return;
+
+    const phones = unverified.map(f => f.customerNumber).join(',');
+    const names = unverified.map(f => encodeURIComponent(f.customerName || '')).join(',');
+    const products = unverified.map(f => encodeURIComponent(getFormProduct(f))).join(',');
+    const months = unverified.map(f => encodeURIComponent(new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' }))).join(',');
+
     fetch(
       `${API_BASE}/api/verify/bulk-admin?phones=${encodeURIComponent(phones)}&names=${names}&products=${products}&months=${months}`,
       { headers: { Authorization: 'Bearer ' + token } }
     )
       .then(r => {
-        if (!r.ok) throw new Error('Verification fetch failed');
+        if (!r.ok) return null;
         return r.json();
       })
-      .then(async verifyMap => {
-        setVerificationMap(verifyMap);
-        
-        // Calculate stats
-        let fullyVerified = 0;
-        let partiallyDone = 0;
-        let notFound = 0;
-        
+      .then(verifyMap => {
+        if (!verifyMap || Object.keys(verifyMap).length === 0) return;
+        const updatedMap = { ...initialMap };
+        let fv = 0, pd = 0, nf = 0;
+        const ptsByFSE = {};
+
         list.forEach(form => {
           const vKey = getVerificationKey(form);
-          const verification = verifyMap[vKey];
-          
-          if (verification) {
-            if (verification.status === 'Fully Verified') fullyVerified++;
-            else if (verification.status === 'Partially Done') partiallyDone++;
-            else notFound++;
-          } else {
-            notFound++;
+          const backendInfo = verifyMap[vKey] || verifyMap[form.customerNumber];
+          if (backendInfo) {
+            updatedMap[vKey] = backendInfo;
+            if (form.customerNumber) updatedMap[form.customerNumber] = backendInfo;
           }
-        });
-        
-        setVerificationStats({ fullyVerified, partiallyDone, notFound });
-        
-        // Calculate FSE points
-        const pointsByFSE = {};
-        list.forEach(form => {
-          const fseName = form.employeeName || 'Unknown';
-          const vKey = getVerificationKey(form);
-          const verification = verifyMap[vKey];
-          
-          if (verification && verification.status === 'Fully Verified') {
+          const curStatus = updatedMap[vKey]?.status || 'Not Found';
+          if (curStatus === 'Fully Verified') fv++;
+          else if (curStatus === 'Partially Done') pd++;
+          else nf++;
+
+          if (curStatus === 'Fully Verified') {
+            const fseName = form.employeeName || 'Unknown';
             const productName = form.formFillingFor || (form.brand === 'Tide' && form.tideProduct ? form.tideProduct : form.brand) || '';
-            const points = verification.points || 0;
-            
-            if (!pointsByFSE[fseName]) {
-              pointsByFSE[fseName] = { total: 0, counted: new Set() };
-            }
-            
+            const pts = updatedMap[vKey]?.points || 0;
+            if (!ptsByFSE[fseName]) ptsByFSE[fseName] = { total: 0, counted: new Set() };
             const dedupKey = `${form.customerNumber}__${productName.toLowerCase().trim()}`;
-            if (!pointsByFSE[fseName].counted.has(dedupKey)) {
-              pointsByFSE[fseName].counted.add(dedupKey);
-              pointsByFSE[fseName].total += points;
+            if (!ptsByFSE[fseName].counted.has(dedupKey)) {
+              ptsByFSE[fseName].counted.add(dedupKey);
+              ptsByFSE[fseName].total += pts;
             }
           }
         });
-        
-        const finalPoints = {};
-        Object.keys(pointsByFSE).forEach(name => {
-          finalPoints[name] = Math.round(pointsByFSE[name].total * 10) / 10;
-        });
-        
-        // Fetch pointsAdjustment
-        try {
-          const adjRes = await fetch(`${API_BASE}/api/forms/admin/employee-points`, {
-            headers: { Authorization: 'Bearer ' + token }
-          });
-          if (adjRes.ok) {
-            const adjData = await adjRes.json();
-            adjData.forEach(emp => {
-              const name = emp.newJoinerName;
-              const adj = emp.pointsAdjustment || 0;
-              if (adj !== 0) {
-                finalPoints[name] = Math.round(((finalPoints[name] || 0) + adj) * 10) / 10;
-              }
-            });
-          }
-        } catch { /* ignore */ }
-        
-        setFsePoints(finalPoints);
-        setIsLoadingVerification(false);
+
+        setVerificationStats({ fullyVerified: fv, partiallyDone: pd, notFound: nf });
+        setVerificationMap(updatedMap);
+        const finPts = {};
+        Object.keys(ptsByFSE).forEach(n => finPts[n] = Math.round(ptsByFSE[n].total * 10) / 10);
+        setFsePoints(finPts);
       })
-      .catch(error => {
-        console.error('Failed to fetch verification:', error);
-        setVerificationStats({ fullyVerified: 0, partiallyDone: 0, notFound: 0 });
-        setVerificationMap({});
-        setIsLoadingVerification(false);
-      });
+      .catch(() => {});
   }, [activeTab, teamForms, myForms, dateFilter, fromDate, toDate, selYear, selMonth, selProduct, token]);
 
   // Fetch verification data when FSE modal opens
   useEffect(() => {
     if (!selectedFSE) return;
-    setLoadingVerify(true);
-    setFseVerifyData({}); // Clear old data first
-    
-    // Use bulk-admin API (same as admin panel) for consistent results
-    const phones   = selectedFSE.forms.map(f => f.customerNumber).join(',');
-    const names    = selectedFSE.forms.map(f => encodeURIComponent(f.customerName || '')).join(',');
-    const products = selectedFSE.forms.map(f => encodeURIComponent(getFormProduct(f))).join(',');
-    const months   = selectedFSE.forms.map(f => encodeURIComponent(new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' }))).join(',');
+    const map = {};
+    selectedFSE.forms.forEach(form => {
+      const vstatus = form.verificationStatus || form.verificationChecks?.status || 'Not Found';
+      const vpoints = form.verificationChecks?.points || 0;
+      const isFound = vstatus !== 'Not Found';
+      const vKey = getVerificationKey(form);
+      const verification = verificationMap[vKey] || {
+        status: vstatus,
+        points: vpoints,
+        phoneMatch: isFound ? true : (form.verificationChecks?.phoneMatch || false),
+        inSheet: isFound ? true : (form.verificationChecks?.inSheet || false),
+        ...form.verificationChecks,
+        status: vstatus
+      };
+      if (isFound) {
+        verification.phoneMatch = true;
+        verification.inSheet = true;
+      }
+      map[form._id] = { verification, phoneCheck: {} };
+    });
+    setFseVerifyData(map);
+    setLoadingVerify(false);
+
+    const unverified = selectedFSE.forms.filter(f => !f.verificationStatus || f.verificationStatus === 'Not Found').slice(0, 20);
+    if (unverified.length === 0) return;
+
+    const phones   = unverified.map(f => f.customerNumber).join(',');
+    const names    = unverified.map(f => encodeURIComponent(f.customerName || '')).join(',');
+    const products = unverified.map(f => encodeURIComponent(getFormProduct(f))).join(',');
+    const months   = unverified.map(f => encodeURIComponent(new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' }))).join(',');
     
     fetch(`${API_BASE}/api/verify/bulk-admin?phones=${encodeURIComponent(phones)}&names=${names}&products=${products}&months=${months}&_t=${Date.now()}`, {
-      headers: { 
-        Authorization: 'Bearer ' + token,
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'Pragma': 'no-cache'
-      }
+      headers: { Authorization: 'Bearer ' + token }
     })
       .then(r => r.json())
       .then(verifyMap => {
-        const map = {};
+        const updated = { ...map };
         selectedFSE.forms.forEach(form => {
-          const vKey = getVerificationKey(form); // Use helper function
-          const verification = verifyMap[vKey];
-          if (verification) {
-            map[form._id] = { verification, phoneCheck: {} };
+          const vKey = getVerificationKey(form);
+          const backendVer = verifyMap[vKey] || verifyMap[form.customerNumber];
+          if (backendVer) {
+            updated[form._id] = { verification: backendVer, phoneCheck: {} };
           }
         });
-        setFseVerifyData(map);
-        setLoadingVerify(false);
+        setFseVerifyData(updated);
       })
-      .catch(() => {
-        setFseVerifyData({});
-        setLoadingVerify(false);
-      });
-  }, [selectedFSE, token]);
+      .catch(() => {});
+  }, [selectedFSE, token, verificationMap]);
 
   const kpis = [
     { label: 'Total FSE',          value: stats.total,   cls: 'kpi-total',  icon: '👥', key: 'total' },
@@ -373,25 +512,24 @@ export default function Dashboard() {
   };
 
   const handleRaiseAlert = async (form) => {
-    // First, check if there's an existing pending task for this merchant
+    const vKey = getVerificationKey(form);
+    const vstatus = form.verificationStatus || form.verificationChecks?.status || 'Not Found';
+    const vpoints = form.verificationChecks?.points || 0;
+    const isFound = vstatus !== 'Not Found';
+    const verification = verificationMap[vKey] || verificationMap[form.customerNumber] || {
+      status: vstatus,
+      points: vpoints,
+      phoneMatch: isFound ? true : (form.verificationChecks?.phoneMatch || false),
+      inSheet: isFound ? true : (form.verificationChecks?.inSheet || false),
+      ...form.verificationChecks,
+      status: vstatus
+    };
+
     try {
       const checkResponse = await fetch(`${API_BASE}/api/tasks/check-merchant-task/${form._id}`, {
         headers: { Authorization: 'Bearer ' + token }
       });
       const checkData = await checkResponse.json();
-
-      // Fetch fresh verification details with full checks data
-      const product = getFormProduct(form); // Use helper function
-      const month = new Date(form.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' });
-      
-      const response = await fetch(
-        `${API_BASE}/api/verify/bulk-admin?phones=${encodeURIComponent(form.customerNumber)}&names=${encodeURIComponent(form.customerName)}&products=${encodeURIComponent(product)}&months=${encodeURIComponent(month)}`,
-        { headers: { Authorization: 'Bearer ' + token } }
-      );
-      const verifyMap = await response.json();
-      const vKey = getVerificationKey(form); // Use helper function
-      const verification = verifyMap[vKey];
-      
       setTaskModal({ 
         form, 
         verification,
@@ -401,24 +539,7 @@ export default function Dashboard() {
       });
     } catch (err) {
       console.error('Failed to check existing task:', err);
-      // If check fails, proceed without existing task info
-      const product = getFormProduct(form); // Use helper function
-      const month = new Date(form.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' });
-      
-      try {
-        const response = await fetch(
-          `${API_BASE}/api/verify/bulk-admin?phones=${encodeURIComponent(form.customerNumber)}&names=${encodeURIComponent(form.customerName)}&products=${encodeURIComponent(product)}&months=${encodeURIComponent(month)}`,
-          { headers: { Authorization: 'Bearer ' + token } }
-        );
-        const verifyMap = await response.json();
-        const vKey = getVerificationKey(form); // Use helper function
-        const verification = verifyMap[vKey];
-        
-        setTaskModal({ form, verification, existingTask: null, canSendReminder: false, daysSinceCreated: 0 });
-      } catch (verifyErr) {
-        console.error('Failed to fetch verification:', verifyErr);
-        setTaskModal({ form, verification: null, existingTask: null, canSendReminder: false, daysSinceCreated: 0 });
-      }
+      setTaskModal({ form, verification, existingTask: null, canSendReminder: false, daysSinceCreated: 0 });
     }
   };
 
@@ -538,14 +659,36 @@ export default function Dashboard() {
       <div className="main-content">
 
         {/* Welcome */}
-        <div className="welcome-card" style={{ flexDirection: 'row', alignItems: 'center', padding: '16px 20px', position: 'relative' }}>
+        <div className="welcome-card" style={{ flexDirection: 'row', alignItems: 'center', padding: '16px 20px', position: 'relative', display: 'flex', gap: 10 }}>
           <div className="welcome-avatar" style={{ width: 44, height: 44, fontSize: 16, flexShrink: 0 }}>
             {tl?.image ? <img src={tl.image} alt="avatar" /> : initials}
           </div>
-          <div className="welcome-text" style={{ textAlign: 'left', marginLeft: 12 }}>
+          <div className="welcome-text" style={{ textAlign: 'left', marginLeft: 12, flex: 1, minWidth: 0 }}>
             <h2 style={{ fontSize: 16, marginBottom: 2 }}>Welcome, {tl?.name?.split(' ')[0] || ''}!</h2>
             <p style={{ fontSize: 12, opacity: 0.85 }}>Team Lead · {tl?.location}</p>
           </div>
+          {/* Total Points badge */}
+          {(() => {
+            let totalPoints = 0;
+            activeForms.forEach(form => {
+              const vKey = getVerificationKey(form);
+              const verification = verificationMap[vKey];
+              if (verification?.status === 'Fully Verified') {
+                totalPoints += verification.points || 0;
+              }
+            });
+            totalPoints = Math.round(totalPoints * 10) / 10;
+            return (
+              <div style={{
+                background: 'rgba(255,255,255,0.15)', border: '1.5px solid rgba(255,255,255,0.3)',
+                borderRadius: 12, padding: '8px 16px', textAlign: 'center',
+                backdropFilter: 'blur(4px)', flexShrink: 0
+              }}>
+                <div style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.8)', textTransform: 'uppercase', letterSpacing: '1px' }}>TOTAL POINTS</div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: '#fff', marginTop: 2 }}>{totalPoints}</div>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Quick Overview */}
@@ -772,7 +915,7 @@ export default function Dashboard() {
                     <div className="mr-name">{form.customerName}</div>
                     <div className="mr-meta">
                       <span>📍 {form.location}</span>
-                      <span>📄 {getFormProduct(form) || '–'}</span>
+                      <span>📄 {formatProductDisplay(form, verificationMap[getVerificationKey(form)])}</span>
                       <span>📞 {form.customerNumber}</span>
                     </div>
                   </div>
@@ -1011,39 +1154,41 @@ export default function Dashboard() {
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <button 
                   onClick={() => {
-                    // Force refresh verification data using bulk-admin API
                     setLoadingVerify(true);
-                    setFseVerifyData({});
-                    
+                    const map = {};
+                    selectedFSE.forms.forEach(form => {
+                      const vKey = getVerificationKey(form);
+                      const verification = verificationMap[vKey] || {
+                        status: form.verificationStatus || 'Not Found',
+                        points: form.verificationChecks?.points || 0,
+                        ...form.verificationChecks
+                      };
+                      map[form._id] = { verification, phoneCheck: {} };
+                    });
+                    setFseVerifyData(map);
+                    setLoadingVerify(false);
+
                     const phones   = selectedFSE.forms.map(f => f.customerNumber).join(',');
                     const names    = selectedFSE.forms.map(f => encodeURIComponent(f.customerName || '')).join(',');
                     const products = selectedFSE.forms.map(f => encodeURIComponent(getFormProduct(f))).join(',');
                     const months   = selectedFSE.forms.map(f => encodeURIComponent(new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' }))).join(',');
                     
                     fetch(`${API_BASE}/api/verify/bulk-admin?phones=${encodeURIComponent(phones)}&names=${names}&products=${products}&months=${months}&_t=${Date.now()}`, {
-                      headers: { 
-                        Authorization: 'Bearer ' + token,
-                        'Cache-Control': 'no-cache, no-store, must-revalidate',
-                        'Pragma': 'no-cache'
-                      }
+                      headers: { Authorization: 'Bearer ' + token }
                     })
                       .then(r => r.json())
                       .then(verifyMap => {
-                        const map = {};
+                        const updated = { ...map };
                         selectedFSE.forms.forEach(form => {
-                          const vKey = getVerificationKey(form); // Use helper function
-                          const verification = verifyMap[vKey];
-                          if (verification) {
-                            map[form._id] = { verification, phoneCheck: {} };
+                          const vKey = getVerificationKey(form);
+                          const backendVer = verifyMap[vKey] || verifyMap[form.customerNumber];
+                          if (backendVer) {
+                            updated[form._id] = { verification: backendVer, phoneCheck: {} };
                           }
                         });
-                        setFseVerifyData(map);
-                        setLoadingVerify(false);
+                        setFseVerifyData(updated);
                       })
-                      .catch(() => {
-                        setFseVerifyData({});
-                        setLoadingVerify(false);
-                      });
+                      .catch(() => {});
                   }}
                   style={{ width: 32, height: 32, borderRadius: '50%', border: 'none', background: '#e6f4ea', color: 'var(--green-dark)', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                   title="Refresh verification data">
@@ -1102,7 +1247,7 @@ export default function Dashboard() {
                       <div style={{ background: '#f9f9f9', padding: '4px 6px', borderRadius: 6 }}>
                         <div style={{ fontSize: 8, color: 'var(--text-light)', marginBottom: 1 }}>Product</div>
                         <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-dark)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {form.formFillingFor || form.tideProduct || form.brand || '–'}
+                          {formatProductDisplay(form, v)}
                         </div>
                       </div>
                       

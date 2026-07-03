@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom';
 import {
-  Box, Typography, Card, CardContent, CircularProgress, Chip,
-  Tooltip, IconButton, Collapse, Button, Alert
+  Box, Typography, CircularProgress, Chip,
+  Tooltip, IconButton, Collapse, Button, Alert, Popover
 } from '@mui/material';
 import { BRAND } from '../theme';
-
-const EMP_API = process.env.REACT_APP_EMPLOYEE_API_URL || 'http://localhost:4000/api';
+import { API_BASE } from '../api';
 
 // Month names for display
 const MONTHS = [
@@ -35,6 +34,7 @@ const PASS_COLORS = {
  */
 function TideMerchantTimeline({ phone, customerName, inline = false }) {
   const [expanded, setExpanded] = useState(false);
+  const [anchorEl, setAnchorEl] = useState(null);
   const [loading, setLoading] = useState(false);
   const [timeline, setTimeline] = useState(null);
   const [error, setError] = useState(null);
@@ -52,7 +52,7 @@ function TideMerchantTimeline({ phone, customerName, inline = false }) {
     setError(null);
     
     try {
-      const res = await fetch(`${EMP_API}/tide/merchant-timeline?phone=${encodeURIComponent(phone)}&name=${encodeURIComponent(customerName)}`);
+      const res = await fetch(`${API_BASE}/api/tide/merchant-timeline?phone=${encodeURIComponent(phone)}&name=${encodeURIComponent(customerName)}`);
       
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}: ${res.statusText}`);
@@ -71,9 +71,14 @@ function TideMerchantTimeline({ phone, customerName, inline = false }) {
     }
   };
 
-  const toggleTimeline = () => {
+  const toggleTimeline = (e) => {
     const newExpanded = !expanded;
     setExpanded(newExpanded);
+    if (newExpanded && e && e.currentTarget) {
+      setAnchorEl(e.currentTarget);
+    } else {
+      setAnchorEl(null);
+    }
     
     if (newExpanded) {
       document.body.classList.add('timeline-open');
@@ -93,8 +98,6 @@ function TideMerchantTimeline({ phone, customerName, inline = false }) {
     <>
       <Box className="timeline-btn-wrapper" sx={{ 
         position: 'relative',
-        visibility: expanded ? 'hidden' : 'visible',
-        pointerEvents: expanded ? 'none' : 'auto',
         display: 'inline-flex'
       }}>
         {/* Timeline Toggle Button */}
@@ -103,7 +106,7 @@ function TideMerchantTimeline({ phone, customerName, inline = false }) {
             size="small"
             onClick={(e) => {
               e.stopPropagation();
-              toggleTimeline();
+              toggleTimeline(e);
             }}
             sx={{
               color: '#1565c0',
@@ -121,56 +124,56 @@ function TideMerchantTimeline({ phone, customerName, inline = false }) {
         </Tooltip>
       </Box>
 
-      {/* Backdrop */}
-      {expanded && ReactDOM.createPortal(
-        <Box
-          onClick={toggleTimeline}
-          sx={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            bgcolor: 'rgba(0, 0, 0, 0.85)',
-            zIndex: 99999,
-            backdropFilter: 'blur(4px)',
-            pointerEvents: 'all'
-          }}
-        />,
-        document.body
-      )}
-
-      {/* Timeline Content */}
-      {expanded && ReactDOM.createPortal(
-        <Card 
-          onClick={(e) => e.stopPropagation()}
-          sx={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            width: '100%',
-            height: '100vh',
-            maxWidth: '100%',
-            maxHeight: '100vh',
-            overflow: 'auto',
-            border: 'none',
-            borderRadius: 0,
-            bgcolor: '#ffffff',
-            boxShadow: 'none',
-            zIndex: 100000
-          }}>
+      {/* Popover Timeline Content */}
+      <Popover
+        open={Boolean(expanded && anchorEl)}
+        anchorEl={anchorEl}
+        onClose={(e) => {
+          if (e) e.stopPropagation();
+          setExpanded(false);
+          setAnchorEl(null);
+          document.body.classList.remove('timeline-open');
+        }}
+        anchorOrigin={{
+          vertical: 'bottom',
+          horizontal: 'right',
+        }}
+        transformOrigin={{
+          vertical: 'top',
+          horizontal: 'right',
+        }}
+        slotProps={{
+          paper: {
+            onClick: (e) => e.stopPropagation(),
+            sx: {
+              width: { xs: '92vw', sm: 680 },
+              maxHeight: '82vh',
+              overflow: 'auto',
+              border: `2.5px solid ${BRAND.primary}`,
+              borderRadius: 3,
+              bgcolor: '#ffffff',
+              boxShadow: '0 12px 40px rgba(0,0,0,0.3)',
+              zIndex: 100000
+            }
+          }
+        }}
+      >
+        <Box sx={{ position: 'relative' }}>
           {/* Close Button */}
           <IconButton
-            onClick={toggleTimeline}
+            onClick={(e) => {
+              if (e) e.stopPropagation();
+              setExpanded(false);
+              setAnchorEl(null);
+              document.body.classList.remove('timeline-open');
+            }}
             sx={{
               position: 'absolute',
               top: 8,
               right: 8,
               color: '#fff',
               bgcolor: 'rgba(0,0,0,0.2)',
-              zIndex: 1,
+              zIndex: 10,
               '&:hover': { bgcolor: 'rgba(0,0,0,0.3)' }
             }}
           >
@@ -205,7 +208,7 @@ function TideMerchantTimeline({ phone, customerName, inline = false }) {
             </Typography>
           </Box>
 
-          <CardContent sx={{ p: { xs: 1.5, sm: 2.5 } }}>
+          <Box sx={{ p: { xs: 1.5, sm: 2.5 } }}>
             {loading ? (
               <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', py: 4, gap: 2 }}>
                 <CircularProgress size={24} sx={{ color: BRAND.primary }} />
@@ -553,10 +556,9 @@ function TideMerchantTimeline({ phone, customerName, inline = false }) {
                 )}
               </Box>
             )}
-          </CardContent>
-        </Card>,
-        document.body
-      )}
+          </Box>
+        </Box>
+      </Popover>
     </>
   );
 }
