@@ -13,7 +13,9 @@ import InstallPWA from './components/InstallPWA';
 import PullToRefresh from './components/PullToRefresh';
 
 function PrivateRoute({ children }) {
-  return localStorage.getItem('token') ? children : <Navigate to="/" replace />;
+  const params = new URLSearchParams(window.location.search);
+  const urlToken = params.get('adminToken') || params.get('token');
+  return (localStorage.getItem('token') || urlToken) ? children : <Navigate to="/" replace />;
 }
 
 function AutoUpdateChecker() {

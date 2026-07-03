@@ -1,6 +1,6 @@
 // Cache version — update this string on every deploy to force cache refresh
 const CACHE_NAME = 'vegavruddhi-tl-v' + (self.__WB_MANIFEST ? self.__WB_MANIFEST : Date.now());
-const STATIC_CACHE = 'vegavruddhi-tl-static-v1.0.5';
+const STATIC_CACHE = 'vegavruddhi-tl-static-v1.0.6';
 
 const urlsToCache = [
   '/',
@@ -33,9 +33,26 @@ self.addEventListener('fetch', (event) => {
   // ✅ NEVER cache API calls — always go to network
   if (
     url.pathname.startsWith('/api/') ||
+    event.request.method !== 'GET' ||
     url.hostname !== self.location.hostname
   ) {
     event.respondWith(fetch(event.request));
+    return;
+  }
+
+  // ✅ For HTML navigation requests — Network-First (so new deploys load latest index.html)
+  if (event.request.mode === 'navigate' || event.request.headers.get('accept')?.includes('text/html')) {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response && response.status === 200) {
+            const responseToCache = response.clone();
+            caches.open(STATIC_CACHE).then((cache) => cache.put(event.request, responseToCache));
+          }
+          return response;
+        })
+        .catch(() => caches.match(event.request) || caches.match('/index.html'))
+    );
     return;
   }
 
@@ -82,7 +99,7 @@ self.addEventListener('fetch', (event) => {
 
 // Activate event - clean up ALL old caches
 self.addEventListener('activate', (event) => {
-  console.log('[Service Worker] Activating...');
+  console.log('[Service Worker] Activating & cleaning old caches...');
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(

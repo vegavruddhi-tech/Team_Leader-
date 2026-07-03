@@ -110,7 +110,46 @@ function formatProductDisplay(f, info) {
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const token = localStorage.getItem('token');
+
+  // ✅ Admin impersonation support — initialized SYNCHRONOUSLY from URL/sessionStorage
+  // This runs before any useEffect so token is valid on first render
+  const _initImpersonation = () => {
+    const params = new URLSearchParams(window.location.search);
+    const viewAs = params.get('viewAs');
+    const urlToken = params.get('token') || params.get('adminToken');
+    if (viewAs && urlToken) {
+      sessionStorage.setItem('tl_impersonationToken', urlToken);
+      sessionStorage.setItem('tl_viewAsEmail', viewAs);
+      window.history.replaceState({}, '', window.location.pathname);
+      return { isAdminView: true, adminViewEmail: viewAs, impersonationToken: urlToken };
+    }
+    const sessToken = sessionStorage.getItem('tl_impersonationToken');
+    const sessEmail = sessionStorage.getItem('tl_viewAsEmail');
+    if (sessToken && sessEmail) {
+      return { isAdminView: true, adminViewEmail: sessEmail, impersonationToken: sessToken };
+    }
+    return { isAdminView: false, adminViewEmail: '', impersonationToken: null };
+  };
+
+  const [isAdminView, setIsAdminView] = useState(() => _initImpersonation().isAdminView);
+  const [adminViewEmail, setAdminViewEmail] = useState(() => _initImpersonation().adminViewEmail);
+  const [impersonationToken, setImpersonationToken] = useState(() => _initImpersonation().impersonationToken);
+
+  const token = isAdminView ? impersonationToken : localStorage.getItem('token');
+
+  const handleExitAdminView = () => {
+    sessionStorage.removeItem('tl_impersonationToken');
+    sessionStorage.removeItem('tl_viewAsEmail');
+    if (window.opener && !window.opener.closed) {
+      window.close();
+    } else {
+      const adminUrl = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+        ? 'http://localhost:3000'
+        : 'https://vegavruddhi-admin-tide-bt-cyej.vercel.app';
+      window.location.href = adminUrl;
+    }
+  };
+
   const [tl,         setTl]         = useState(null);
   const [stats,      setStats]      = useState({ total: 0, working: 0, left: 0 });
   const [employees,  setEmployees]  = useState([]);
@@ -138,10 +177,11 @@ export default function Dashboard() {
   const [selProduct, setSelProduct] = useState('');
 
   useEffect(() => {
+    if (!token) return; // Don't fetch with null token
     fetch(`${API_BASE}/api/tl/profile`, { headers: { Authorization: 'Bearer ' + token } })
-      .then(r => { if (r.status === 401) { localStorage.clear(); navigate('/'); } return r.json(); })
+      .then(r => { if (r.status === 401 && !isAdminView) { localStorage.clear(); navigate('/'); } return r.json(); })
       .then(setTl).catch(console.error);
-  }, [token, navigate]);
+  }, [token, navigate, isAdminView]);
 
   // Subscribe to push notifications when profile is loaded
   useEffect(() => {
@@ -657,6 +697,22 @@ export default function Dashboard() {
     <>
       <Navbar tl={tl} notificationCount={taskNotificationCount} />
       <div className="main-content">
+        {/* Admin Impersonation Banner */}
+        {isAdminView && (
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            background: '#e3f2fd', border: '1px solid #90caf9', borderRadius: 10,
+            padding: '10px 18px', marginBottom: 12, flexWrap: 'wrap', gap: 8
+          }}>
+            <span style={{ fontWeight: 700, color: '#0d47a1', fontSize: 13 }}>
+              👁️ Viewing TL Dashboard as <strong>{tl?.name || adminViewEmail}</strong> ({adminViewEmail}) — Admin Mode
+            </span>
+            <button onClick={handleExitAdminView} style={{
+              background: '#1976d2', color: '#fff', border: 'none', borderRadius: 8,
+              padding: '7px 18px', fontWeight: 700, fontSize: 13, cursor: 'pointer'
+            }}>⬅ Return to Admin Approvals</button>
+          </div>
+        )}
 
         {/* Welcome */}
         <div className="welcome-card" style={{ flexDirection: 'row', alignItems: 'center', padding: '16px 20px', position: 'relative', display: 'flex', gap: 10 }}>
