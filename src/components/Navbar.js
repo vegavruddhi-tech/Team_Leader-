@@ -374,6 +374,13 @@ export default function Navbar({ tl, notificationCount, onNotificationClick }) {
             <a href="/my-team"   onClick={e => { e.preventDefault(); navigate('/my-team'); }}>👥&nbsp; My Team</a>
             <a href="/my-salary" onClick={e => { e.preventDefault(); navigate('/my-salary'); }}>💰&nbsp; My Salary</a>
             <a href="/profile"   onClick={e => { e.preventDefault(); navigate('/profile'); }}>👤&nbsp; My Profile</a>
+            <a href="https://vegavruddhi-tl-tide-bt.vercel.app" target="_self" style={{ color: '#1565c0' }}
+              onClick={e => {
+                e.preventDefault();
+                const token = localStorage.getItem('token');
+                const btUrl = 'https://vegavruddhi-tl-tide-bt.vercel.app';
+                window.location.href = token ? `${btUrl}?token=${encodeURIComponent(token)}` : btUrl;
+              }}>🔗&nbsp; BT Dashboard</a>
             <a href="#logout" className="logout" onClick={logout}>🚪&nbsp; Logout</a>
           </div>
         </div>
