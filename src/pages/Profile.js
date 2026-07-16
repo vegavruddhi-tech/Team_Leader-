@@ -46,10 +46,30 @@ export default function Profile() {
     const c = canvasRef.current, v = videoRef.current;
     c.width = v.videoWidth; c.height = v.videoHeight;
     c.getContext('2d').drawImage(v, 0, 0);
-    c.toBlob(blob => { stopCamera(); uploadPhoto(new File([blob], 'photo-' + Date.now() + '.jpg', { type: 'image/jpeg' })); }, 'image/jpeg', 0.9);
+    c.toBlob(blob => { stopCamera(); uploadPhoto(new File([blob], 'photo-' + Date.now() + '.jpg', { type: 'image/jpeg' })); }, 'image/jpeg', 0.7);
+  };
+  const compressImage = (file, maxWidth = 1000, quality = 0.7) => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target.result;
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width, height = img.height;
+          if (width > maxWidth) { height = Math.round((height * maxWidth) / width); width = maxWidth; }
+          canvas.width = width; canvas.height = height;
+          canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+          canvas.toBlob((blob) => { resolve(blob ? new File([blob], file.name.replace(/\.[^/.]+$/, "") + ".jpg", { type: 'image/jpeg' }) : file); }, 'image/jpeg', quality);
+        };
+      };
+    });
   };
   const uploadPhoto = async (file) => {
-    const fd = new FormData(); fd.append('photo', file);
+    if (file.size > 3 * 1024 * 1024) { alert('Profile photo is too large. Please select an image under 3 MB.'); return; }
+    const finalFile = file.size > 500 * 1024 ? await compressImage(file) : file;
+    const fd = new FormData(); fd.append('photo', finalFile);
     const res  = await fetch(`${API_BASE}/api/tl/update-photo`, { method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: fd });
     const data = await res.json();
     if (!res.ok) { alert(data.message || 'Upload failed'); return; }
