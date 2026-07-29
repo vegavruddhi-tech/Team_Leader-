@@ -341,9 +341,7 @@ export default function Dashboard() {
 
     // 1️⃣ Build initial map instantly from database fields (0 latency, 0 errors)
     const initialMap = {};
-    let fullyVerified = 0;
-    let partiallyDone = 0;
-    let notFound = 0;
+    let fullyVerified = 0, partiallyDone = 0, notFound = 0, alreadyVerified = 0;
     const pointsByFSE = {};
 
     list.forEach(form => {
@@ -367,6 +365,7 @@ export default function Dashboard() {
       if (form.customerNumber) initialMap[form.customerNumber] = vinfo;
 
       if (vstatus === 'Fully Verified') fullyVerified++;
+      else if (vstatus === 'Already Verified') alreadyVerified++;
       else if (vstatus === 'Partially Done') partiallyDone++;
       else notFound++;
 
@@ -384,7 +383,7 @@ export default function Dashboard() {
       }
     });
 
-    setVerificationStats({ fullyVerified, partiallyDone, notFound });
+    setVerificationStats({ fullyVerified, alreadyVerified, partiallyDone, notFound });
     setVerificationMap(initialMap);
 
     const finalPoints = {};
@@ -414,7 +413,7 @@ export default function Dashboard() {
       .then(verifyMap => {
         if (!verifyMap || Object.keys(verifyMap).length === 0) return;
         const updatedMap = { ...initialMap };
-        let fv = 0, pd = 0, nf = 0;
+        let fv = 0, av = 0, pd = 0, nf = 0;
         const ptsByFSE = {};
 
         list.forEach(form => {
@@ -426,6 +425,7 @@ export default function Dashboard() {
           }
           const curStatus = updatedMap[vKey]?.status || 'Not Found';
           if (curStatus === 'Fully Verified') fv++;
+          else if (curStatus === 'Already Verified') av++;
           else if (curStatus === 'Partially Done') pd++;
           else nf++;
 
@@ -442,7 +442,7 @@ export default function Dashboard() {
           }
         });
 
-        setVerificationStats({ fullyVerified: fv, partiallyDone: pd, notFound: nf });
+        setVerificationStats({ fullyVerified: fv, alreadyVerified: av, partiallyDone: pd, notFound: nf });
         setVerificationMap(updatedMap);
         const finPts = {};
         Object.keys(ptsByFSE).forEach(n => finPts[n] = Math.round(ptsByFSE[n].total * 10) / 10);
@@ -802,6 +802,7 @@ export default function Dashboard() {
           ) : (
             [
               { label: 'Fully Verified', value: verificationStats.fullyVerified, icon: '✓', color: '#2e7d32', status: 'Fully Verified' },
+              { label: 'Already Verified', value: verificationStats.alreadyVerified, icon: '⧉', color: '#e65100', status: 'Already Verified' },
               { label: 'Partial',        value: verificationStats.partiallyDone, icon: '◑', color: '#f57f17', status: 'Partially Done' },
               { label: 'Not Found',      value: verificationStats.notFound,      icon: '–', color: '#888',    status: 'Not Found' },
             ].map(k => (
@@ -1250,13 +1251,15 @@ export default function Dashboard() {
                 const date = new Date(form.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
                 const vData = fseVerifyData[form._id];
                 const v = vData?.verification || {};
-                const VBADGE = { 
+                const BADGE_MAP = { 
                   'Fully Verified': { bg: '#e6f4ea', color: '#2e7d32', icon: '✓' }, 
+                  'Already Verified': { bg: '#fff3e0', color: '#e65100', icon: '⧉' },
+                  'Critical Failure': { bg: '#ffebee', color: '#c62828', icon: '⚠' }, 
                   'Partially Done': { bg: '#fff8e1', color: '#f57f17', icon: '◑' }, 
                   'Not Verified': { bg: '#fdecea', color: '#c62828', icon: '✗' }, 
                   'Not Found': { bg: '#f5f5f5', color: '#888', icon: '–' } 
                 };
-                const vb = VBADGE[v.status] || VBADGE['Not Found'];
+                const vb = BADGE_MAP[v.status] || BADGE_MAP['Not Found'];
                 
                 return (
                   <div key={form._id}
