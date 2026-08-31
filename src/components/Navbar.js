@@ -372,7 +372,7 @@ export default function Navbar({ tl, notificationCount, onNotificationClick }) {
             </div>
             <a href="/dashboard" onClick={e => { e.preventDefault(); navigate('/dashboard'); }}>🏠&nbsp; Dashboard</a>
             <a href="/my-team"   onClick={e => { e.preventDefault(); navigate('/my-team'); }}>👥&nbsp; My Team</a>
-            <a href="/my-salary" onClick={e => { e.preventDefault(); navigate('/my-salary'); }}>💰&nbsp; My Salary</a>
+            {/* <a href="/my-salary" onClick={e => { e.preventDefault(); navigate('/my-salary'); }}>💰&nbsp; My Salary</a> */}
             <a href="/profile"   onClick={e => { e.preventDefault(); navigate('/profile'); }}>👤&nbsp; My Profile</a>
             <a href="https://vegavruddhi-tl-tide-bt.vercel.app" target="_self" style={{ color: '#1565c0' }}
               onClick={e => {
