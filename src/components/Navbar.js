@@ -220,7 +220,18 @@ export default function Navbar({ tl, notificationCount, onNotificationClick }) {
 
   const logout = (e) => {
     e.preventDefault();
+    const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+    if (token) {
+      fetch(`${API_BASE}/api/tl/logout`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + token
+        }
+      }).catch(() => {});
+    }
     localStorage.clear();
+    sessionStorage.clear();
     navigate('/');
   };
 

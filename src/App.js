@@ -12,10 +12,23 @@ import MySalary from './pages/MySalary';
 import InstallPWA from './components/InstallPWA';
 import PullToRefresh from './components/PullToRefresh';
 
+import { isValidToken } from './api';
+
 function PrivateRoute({ children }) {
   const params = new URLSearchParams(window.location.search);
-  const urlToken = params.get('adminToken') || params.get('token');
-  return (localStorage.getItem('token') || urlToken) ? children : <Navigate to="/" replace />;
+  const hashParams = window.location.hash ? new URLSearchParams(window.location.hash.substring(1)) : null;
+
+  const storedToken = sessionStorage.getItem('token') ||
+                      sessionStorage.getItem('tl_impersonationToken') ||
+                      localStorage.getItem('token');
+
+  const urlToken = params.get('adminToken') || params.get('token') ||
+                   (hashParams && (hashParams.get('adminToken') || hashParams.get('token')));
+
+  const hasValidAuth = (storedToken && isValidToken(storedToken)) ||
+                       (urlToken && isValidToken(urlToken));
+
+  return hasValidAuth ? children : <Navigate to="/" replace />;
 }
 
 function AutoUpdateChecker() {
