@@ -3,7 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { API_BASE } from '../api';
 import TideSelectionPopup from '../components/TideSelectionPopup';
 
-const GOOGLE_CLIENT_ID = '175231524136-39m136pat1dpous6u9eijhfulpmpms1i.apps.googleusercontent.com';
+const GOOGLE_CLIENT_ID = '1066123186680-98c82voik453lp7e36s5vbfodkqtfbpv.apps.googleusercontent.com';
 
 export default function Login() {
   const navigate = useNavigate();
