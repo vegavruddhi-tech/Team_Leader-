@@ -1,6 +1,6 @@
 // Cache version — update this string on every deploy to force cache refresh
-const CACHE_NAME = 'vegavruddhi-tl-v' + (self.__WB_MANIFEST ? self.__WB_MANIFEST : Date.now());
-const STATIC_CACHE = 'vegavruddhi-tl-static-v1.0.6';
+const CACHE_NAME = 'synchronous-tl-v' + (self.__WB_MANIFEST ? self.__WB_MANIFEST : Date.now());
+const STATIC_CACHE = 'synchronous-tl-static-v3.0.0';
 
 const urlsToCache = [
   '/',
@@ -77,6 +77,23 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  
+  // Image assets - Network First, fallback to cache
+  if (url.pathname.match(/\.(png|jpg|jpeg|svg|ico|webp)$/i)) {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response && response.status === 200) {
+            const responseToCache = response.clone();
+            caches.open(STATIC_CACHE).then((cache) => cache.put(event.request, responseToCache));
+          }
+          return response;
+        })
+        .catch(() => caches.match(event.request))
+    );
+    return;
+  }
+
   // For everything else — cache first, fallback to network
   event.respondWith(
     caches.match(event.request)
@@ -112,7 +129,6 @@ self.addEventListener('activate', (event) => {
       );
     })
   );
-  // Take control of all open pages immediately
   return self.clients.claim();
 });
 

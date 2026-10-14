@@ -97,7 +97,7 @@ export default function InstallPWA() {
       >
         <div
           style={{
-            background: 'linear-gradient(135deg, #1a4731 0%, #40916c 100%)',
+            background: 'linear-gradient(135deg, #0b3c6d 0%, #0284c7 100%)',
             padding: '20px',
             color: '#fff',
             textAlign: 'center',
@@ -105,7 +105,7 @@ export default function InstallPWA() {
         >
           <div style={{ fontSize: 48, marginBottom: 8 }}>📱</div>
           <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>
-            Install Vegavruddhi TL App
+            Install Synchronous TL App
           </h3>
           <p style={{ margin: '8px 0 0', fontSize: 13, opacity: 0.9 }}>
             Get quick access from your home screen
@@ -117,7 +117,7 @@ export default function InstallPWA() {
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 12 }}>
               <span style={{ fontSize: 20 }}>⚡</span>
               <div>
-                <div style={{ fontWeight: 700, fontSize: 14, color: '#1a4731', marginBottom: 2 }}>
+                <div style={{ fontWeight: 700, fontSize: 14, color: '#0284c7', marginBottom: 2 }}>
                   Faster Access
                 </div>
                 <div style={{ fontSize: 12, color: '#666' }}>
@@ -129,7 +129,7 @@ export default function InstallPWA() {
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 12 }}>
               <span style={{ fontSize: 20 }}>📴</span>
               <div>
-                <div style={{ fontWeight: 700, fontSize: 14, color: '#1a4731', marginBottom: 2 }}>
+                <div style={{ fontWeight: 700, fontSize: 14, color: '#0284c7', marginBottom: 2 }}>
                   Works Offline
                 </div>
                 <div style={{ fontSize: 12, color: '#666' }}>
@@ -141,7 +141,7 @@ export default function InstallPWA() {
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
               <span style={{ fontSize: 20 }}>🔔</span>
               <div>
-                <div style={{ fontWeight: 700, fontSize: 14, color: '#1a4731', marginBottom: 2 }}>
+                <div style={{ fontWeight: 700, fontSize: 14, color: '#0284c7', marginBottom: 2 }}>
                   Stay Updated
                 </div>
                 <div style={{ fontSize: 12, color: '#666' }}>
@@ -176,7 +176,7 @@ export default function InstallPWA() {
               style={{
                 flex: 2,
                 padding: '12px',
-                background: 'linear-gradient(135deg, #1a4731 0%, #40916c 100%)',
+                background: 'linear-gradient(135deg, #0b3c6d 0%, #0284c7 100%)',
                 border: 'none',
                 borderRadius: 10,
                 fontSize: 14,
@@ -188,7 +188,7 @@ export default function InstallPWA() {
               }}
               onMouseEnter={(e) => {
                 e.target.style.transform = 'translateY(-2px)';
-                e.target.style.boxShadow = '0 6px 16px rgba(26, 71, 49, 0.4)';
+                e.target.style.boxShadow = '0 6px 16px rgba(2, 132, 199, 0.4)';
               }}
               onMouseLeave={(e) => {
                 e.target.style.transform = 'translateY(0)';

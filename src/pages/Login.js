@@ -14,17 +14,18 @@ export default function Login() {
   const [gsiReady, setGsiReady] = useState(!!window.google);
 
   useEffect(() => {
-    if (localStorage.getItem('token')) navigate('/dashboard');
-
-    // Wait for Google GSI script to load
-    if (!window.google) {
-      const interval = setInterval(() => {
-        if (window.google) {
-          setGsiReady(true);
-          clearInterval(interval);
-        }
-      }, 200);
-      return () => clearInterval(interval);
+    if (localStorage.getItem('token')) {
+      navigate('/dashboard');
+    } else {
+      if (!window.google) {
+        const interval = setInterval(() => {
+          if (window.google) {
+            setGsiReady(true);
+            clearInterval(interval);
+          }
+        }, 200);
+        return () => clearInterval(interval);
+      }
     }
   }, [navigate]);
 
@@ -72,31 +73,19 @@ export default function Login() {
         });
 
         if (!tideBTRes.ok) {
-          console.error('❌ Tide BT access check failed:', tideBTRes.status);
-          // If API fails, go to dashboard
           navigate('/dashboard');
           return;
         }
 
         const tideBTData = await tideBTRes.json();
 
-        console.log('🔍 Tide BT Access Check:', tideBTData);
-        console.log('🔍 Has Access:', tideBTData.hasTideBTAccess);
-        console.log('🔍 TL Name:', tideBTData.userName);
-
         if (tideBTData.hasTideBTAccess) {
-          // Show popup to select Tide or Tide BT
-          console.log('✅ Showing Tide BT popup');
           setShowTidePopup(true);
           setLoading(false);
         } else {
-          // No Tide BT access, go directly to Tide dashboard
-          console.log('❌ No Tide BT access, redirecting to dashboard');
           navigate('/dashboard');
         }
       } catch (err) {
-        console.error('❌ Error checking Tide BT access:', err);
-        // If check fails, go to dashboard
         navigate('/dashboard');
       }
     } catch {
@@ -112,7 +101,6 @@ export default function Login() {
 
   const handleSelectTideBT = () => {
     setShowTidePopup(false);
-    // Redirect to Tide BT TL dashboard with token in URL
     const token = localStorage.getItem('token');
     const tideBTUrl = process.env.REACT_APP_TIDEBT_URL
       || (window.location.hostname === 'localhost'
@@ -122,27 +110,39 @@ export default function Login() {
   };
 
   return (
-    <div className="auth-wrapper">
-      <div className="auth-card">
-        <div className="auth-logo">
-          <img src="/logo-full.png" alt="Vegavruddhi Pvt. Ltd." />
-          <span className="tagline">TL Panel — Team Lead Portal</span>
+    <div style={{
+      fontFamily: "'Inter', sans-serif",
+      minHeight: '100vh',
+      background: 'linear-gradient(135deg, #0a192f 0%, #0b3c6d 50%, #0284c7 100%)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24
+    }}>
+      <div style={{
+        background: '#fff', borderRadius: 24, padding: '48px 44px',
+        width: '100%', maxWidth: 420, boxShadow: '0 24px 80px rgba(0,0,0,0.35)', textAlign: 'center'
+      }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, marginBottom: 32 }}>
+          <img src="/logo-full.png" alt="Synchronous Build Digital" style={{ height: 64, width: 64, objectFit: 'contain' }} />
+          <div style={{ fontSize: 20, fontWeight: 800, color: '#0369a1', letterSpacing: '1px', textTransform: 'uppercase' }}>Synchronous</div>
+          <div style={{ fontSize: 11, color: '#0284c7', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: 600 }}>Digital & Technology Solutions</div>
         </div>
-        <hr className="auth-divider" />
-        <h2>Welcome Back 👋</h2>
-        <p className="subtitle">Sign in with your registered Google account to access the TL portal.</p>
+
+        <hr style={{ border: 'none', borderTop: '1.5px solid #e2e8f0', marginBottom: 32 }} />
+
+        <div style={{ fontSize: 24, fontWeight: 800, color: '#0f172a', marginBottom: 8 }}>Welcome Back 👋</div>
+        <p style={{ fontSize: 14, color: '#64748b', marginBottom: 36, lineHeight: 1.5 }}>
+          Sign in with your registered Google account to access the TL portal.
+        </p>
 
         <button
           onClick={handleSignIn}
           disabled={loading}
           style={{
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12,
-            width: '100%', padding: '13px 20px',
-            border: '1.5px solid #dde8dd', borderRadius: 8,
-            background: '#fff', fontSize: 15, fontWeight: 700,
-            color: 'var(--text-dark)', cursor: loading ? 'not-allowed' : 'pointer',
-            opacity: loading ? 0.6 : 1, fontFamily: 'var(--font)',
-            transition: 'all 0.2s', marginTop: 8,
+            width: '100%', padding: '14px 20px', border: '2px solid #e0e8e3',
+            borderRadius: 12, background: '#fff', fontSize: 15, fontWeight: 700,
+            color: '#1a2e22', cursor: loading ? 'not-allowed' : 'pointer',
+            opacity: loading ? 0.6 : 1, fontFamily: "'Inter', sans-serif",
+            transition: 'all 0.2s',
           }}
         >
           <svg width="20" height="20" viewBox="0 0 48 48">
@@ -154,20 +154,24 @@ export default function Login() {
           {loading ? 'Signing in…' : !gsiReady ? 'Loading Google…' : 'Sign in with Google'}
         </button>
 
-        <div style={{ marginTop: 16, padding: '12px 14px', background: 'var(--green-pale)', borderRadius: 8, borderLeft: '3px solid var(--green-light)' }}>
-          <p style={{ fontSize: 12, color: 'var(--green-dark)', lineHeight: 1.6, margin: 0 }}>
-            Use the <strong>email address you provided</strong> during TL registration.
+        <div style={{ marginTop: 24, padding: '14px 16px', background: '#f0f9ff', borderRadius: 10, borderLeft: '3px solid #0284c7', textAlign: 'left' }}>
+          <p style={{ fontSize: 12, color: '#0369a1', lineHeight: 1.6, margin: 0 }}>
+            Use the <strong style={{ color: '#0284c7' }}>email address you provided</strong> during TL registration.
           </p>
         </div>
 
         {error && (
-          <div className="error-msg" style={{ display: 'block', background: isWarn ? '#fff8e1' : undefined, color: isWarn ? '#e65100' : undefined, borderColor: isWarn ? '#f57f17' : undefined }}>
-            {error}
+          <div style={{
+            marginTop: 20, padding: '14px 16px', borderRadius: 10, textAlign: 'left',
+            background: isWarn ? '#fff8e1' : '#fdecea',
+            borderLeft: `3px solid ${isWarn ? '#f59e0b' : '#c62828'}`,
+          }}>
+            <p style={{ fontSize: 13, color: isWarn ? '#e65100' : '#c62828', lineHeight: 1.5, margin: 0 }}>{error}</p>
           </div>
         )}
 
-        <div className="auth-link">
-          New TL? <Link to="/register">Register here</Link>
+        <div style={{ marginTop: 28, fontSize: 13, color: '#64748b' }}>
+          New TL? <Link to="/register" style={{ color: '#0284c7', fontWeight: 700, textDecoration: 'none' }}>Register here</Link>
         </div>
       </div>
 

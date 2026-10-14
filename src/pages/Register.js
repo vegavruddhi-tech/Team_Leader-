@@ -143,12 +143,12 @@ export default function Register() {
     <div className="auth-wrapper">
       <div className="auth-card" style={{ maxWidth: 520 }}>
         <div className="auth-logo">
-          <img src="/logo-full.png" alt="Vegavruddhi Pvt. Ltd." />
-          <span className="tagline">TL Panel — Registration</span>
+          <img src="/logo-full.png" alt="Synchronous Build Digital" />
+          <span className="tagline">Digital & Technology Solutions</span>
         </div>
         <hr className="auth-divider" />
         <h2>Team Lead Registration</h2>
-        <p className="subtitle">VV – TL Registration Details</p>
+        <p className="subtitle">Synchronous Build Digital — TL Registration Details</p>
 
         {error   && <div className="error-msg"   style={{ display: 'block' }}>{error}</div>}
         {success && <div className="success-msg" style={{ display: 'block' }}>{success}</div>}

@@ -45,7 +45,7 @@ function TLNotificationPanel({ token, onClose }) {
         background: '#fff', zIndex: 1001, boxShadow: '-4px 0 24px rgba(0,0,0,0.15)',
         display: 'flex', flexDirection: 'column',
       }}>
-        <div style={{ padding: '16px 18px', borderBottom: '1px solid #eee', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#1a4731' }}>
+        <div style={{ padding: '16px 18px', borderBottom: '1px solid #eee', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'linear-gradient(135deg, #0b3c6d 0%, #0284c7 100%)' }}>
           <div>
             <div style={{ fontWeight: 800, fontSize: 16, color: '#fff' }}>🔔 Team Updates</div>
             <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', marginTop: 2 }}>
@@ -243,8 +243,42 @@ export default function Navbar({ tl, notificationCount, onNotificationClick }) {
     <>
     <nav className="navbar">
       <div className="nav-logo">
-        <a href="/dashboard" onClick={e => { e.preventDefault(); navigate('/dashboard'); }}>
-          <img src="/logo-full.png" alt="Vegavruddhi Pvt. Ltd." />
+        <a href="/dashboard" onClick={e => { e.preventDefault(); navigate('/dashboard'); }} style={{ display: 'flex', alignItems: 'center', gap: 12, textDecoration: 'none' }}>
+          <img
+            src="/logo-full.png?v=20261014"
+            alt="Synchronous Build Digital"
+            style={{
+              height: 40,
+              width: 40,
+              objectFit: 'contain',
+              background: '#ffffff',
+              borderRadius: '8px',
+              padding: '3px',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
+            }}
+          />
+          <div style={{ lineHeight: 1.15, display: 'flex', flexDirection: 'column' }}>
+            <span style={{
+              fontFamily: "'Georgia', serif",
+              fontWeight: 700,
+              fontSize: '1.1rem',
+              color: '#ffffff',
+              letterSpacing: '1.8px',
+              textTransform: 'uppercase'
+            }}>
+              Synchronous
+            </span>
+            <span style={{
+              fontSize: '0.62rem',
+              color: '#38bdf8',
+              letterSpacing: '2px',
+              textTransform: 'uppercase',
+              fontWeight: 600,
+              marginTop: '2px'
+            }}>
+              Digital &amp; Technology Solutions • TL Portal
+            </span>
+          </div>
         </a>
       </div>
       <div className="nav-right">
@@ -258,21 +292,21 @@ export default function Navbar({ tl, notificationCount, onNotificationClick }) {
               cursor: 'pointer',
               padding: '8px 16px',
               borderRadius: 20,
-              background: 'linear-gradient(135deg, #1a4731 0%, #40916c 100%)',
+              background: 'linear-gradient(135deg, #0b3c6d 0%, #0284c7 100%)',
               display: 'flex',
               alignItems: 'center',
               gap: 6,
               transition: 'all 0.2s',
-              border: '2px solid #40916c',
-              boxShadow: '0 2px 8px rgba(26, 71, 49, 0.3)',
+              border: '2px solid #38bdf8',
+              boxShadow: '0 2px 8px rgba(2, 132, 199, 0.3)',
             }}
             onMouseEnter={e => {
               e.currentTarget.style.transform = 'translateY(-2px)';
-              e.currentTarget.style.boxShadow = '0 4px 12px rgba(26, 71, 49, 0.4)';
+              e.currentTarget.style.boxShadow = '0 4px 12px rgba(2, 132, 199, 0.4)';
             }}
             onMouseLeave={e => {
               e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.boxShadow = '0 2px 8px rgba(26, 71, 49, 0.3)';
+              e.currentTarget.style.boxShadow = '0 2px 8px rgba(2, 132, 199, 0.3)';
             }}
           >
             <span style={{ fontSize: 16 }}>📱</span>
@@ -341,9 +375,9 @@ export default function Navbar({ tl, notificationCount, onNotificationClick }) {
           style={{
             position: 'relative', marginRight: 8, cursor: 'pointer',
             width: 40, height: 40, borderRadius: '50%',
-            background: unreadCount > 0 ? '#1a4731' : 'rgba(26,71,49,0.08)',
+            background: unreadCount > 0 ? '#0284c7' : 'rgba(255,255,255,0.08)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            border: unreadCount > 0 ? '2px solid #40916c' : '2px solid transparent',
+            border: unreadCount > 0 ? '2px solid #38bdf8' : '2px solid transparent',
             transition: 'all 0.2s',
           }}
         >

@@ -1,7 +1,7 @@
 {
-  "short_name": "Vegavruddhi TL",
-  "name": "Vegavruddhi TL Panel - Team Leader",
-  "description": "Vegavruddhi Team Leader Portal for Team Management",
+  "short_name": "Synchronous TL",
+  "name": "Synchronous Build Digital - TL Panel",
+  "description": "Synchronous Build Digital Team Leader Portal",
   "icons": [
     {
       "src": "favicon.ico",
@@ -23,7 +23,7 @@
   ],
   "start_url": ".",
   "display": "standalone",
-  "theme_color": "#1a4731",
+  "theme_color": "#0284c7",
   "background_color": "#ffffff",
   "orientation": "portrait",
   "scope": "/",

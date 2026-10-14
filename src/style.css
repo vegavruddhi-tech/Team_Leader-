@@ -2,18 +2,18 @@
 
 /* ── VARIABLES ── */
 :root {
-  --green-dark:  #1a4731;
-  --green-mid:   #2d6a4f;
-  --green-light: #40916c;
-  --green-pale:  #d8f3dc;
-  --text-dark:   #1a1a2e;
-  --text-mid:    #4a4a6a;
-  --text-light:  #8888aa;
-  --bg:          #f0f4f1;
+  --green-dark:  #0369a1;
+  --green-mid:   #0284c7;
+  --green-light: #38bdf8;
+  --green-pale:  #e0f2fe;
+  --text-dark:   #0f172a;
+  --text-mid:    #334155;
+  --text-light:  #64748b;
+  --bg:          #f0f9ff;
   --white:       #ffffff;
-  --shadow-sm:   0 2px 8px rgba(26,71,49,0.08);
-  --shadow:      0 4px 24px rgba(26,71,49,0.10);
-  --shadow-lg:   0 12px 40px rgba(26,71,49,0.15);
+  --shadow-sm:   0 2px 8px rgba(2,132,199,0.08);
+  --shadow:      0 4px 24px rgba(2,132,199,0.10);
+  --shadow-lg:   0 12px 40px rgba(2,132,199,0.15);
   --radius:      12px;
   --radius-lg:   18px;
   --font:        'Plus Jakarta Sans', 'Segoe UI', sans-serif;
@@ -76,7 +76,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #0a1f14 0%, #1a4731 55%, #2d6a4f 100%);
+  background: linear-gradient(135deg, #0a192f 0%, #0b3c6d 55%, #0284c7 100%);
   padding: 24px;
   position: relative;
   overflow: hidden;
@@ -117,8 +117,7 @@ body {
 
 .auth-logo { text-align: center; margin-bottom: 28px; }
 .auth-logo img {
-  height: 72px; object-fit: contain;
-  filter: brightness(0) saturate(100%) invert(20%) sepia(60%) saturate(500%) hue-rotate(110deg) brightness(60%);
+  height: 64px; object-fit: contain;
   transition: transform var(--transition);
 }
 .auth-logo img:hover { transform: scale(1.04); }
@@ -244,17 +243,23 @@ body {
 
 /* ── NAVBAR ── */
 .navbar {
-  background: var(--green-dark);
-  padding: 0 32px; height: 68px;
+  background: linear-gradient(90deg, #0a192f 0%, #0b3c6d 40%, #0284c7 100%);
+  border-bottom: 2.5px solid #38bdf8;
+  padding: 0 32px; height: 64px;
   display: flex; align-items: center; justify-content: space-between;
-  box-shadow: 0 2px 20px rgba(0,0,0,0.2);
+  box-shadow: 0 2px 20px rgba(0,0,0,0.55);
   position: sticky; top: 0; z-index: 100;
   font-family: var(--font);
   backdrop-filter: blur(8px);
 }
 .nav-logo img {
-  height: 44px; object-fit: contain;
-  filter: brightness(0) invert(1);
+  height: 40px;
+  width: 40px;
+  object-fit: contain;
+  background: #ffffff;
+  border-radius: 8px;
+  padding: 3px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
   transition: transform var(--transition);
 }
 .nav-logo img:hover { transform: scale(1.04); }
